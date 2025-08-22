@@ -1,0 +1,589 @@
+basePath: /api/v1
+definitions:
+  github_com_nexconsult_cnpj-api_internal_models.BatchRequest:
+    properties:
+      cnpjs:
+        example:
+        - '["11222333000181"'
+        - '"11333444000172"]'
+        items:
+          type: string
+        maxItems: 100
+        minItems: 1
+        type: array
+    required:
+    - cnpjs
+    type: object
+  github_com_nexconsult_cnpj-api_internal_models.BatchResponse:
+    properties:
+      duration_ms:
+        example: 5200
+        type: integer
+      errors:
+        example: 0
+        type: integer
+      results:
+        items:
+          $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.BatchResult'
+        type: array
+      success:
+        example: 2
+        type: integer
+      timestamp:
+        example: "2024-01-15T10:30:00Z"
+        type: string
+      total:
+        example: 2
+        type: integer
+    type: object
+  github_com_nexconsult_cnpj-api_internal_models.BatchResult:
+    properties:
+      cnpj:
+        example: "11222333000181"
+        type: string
+      data:
+        $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.CNPJResponse'
+      duration_ms:
+        example: 2500
+        type: integer
+      error:
+        type: string
+      success:
+        example: true
+        type: boolean
+    type: object
+  github_com_nexconsult_cnpj-api_internal_models.BrowserMetrics:
+    properties:
+      active_browsers:
+        example: 8
+        type: integer
+      queue_size:
+        example: 3
+        type: integer
+      total_browsers:
+        example: 15
+        type: integer
+    type: object
+  github_com_nexconsult_cnpj-api_internal_models.CNAEInfo:
+    properties:
+      codigo:
+        example: 6201-5/00
+        type: string
+      descricao:
+        example: Desenvolvimento de programas de computador sob encomenda
+        type: string
+    type: object
+  github_com_nexconsult_cnpj-api_internal_models.CNPJResponse:
+    properties:
+      cache:
+        example: false
+        type: boolean
+      capital_social:
+        example: 1000000,00
+        type: string
+      cnae_principal:
+        $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.CNAEInfo'
+      cnae_secundarias:
+        items:
+          $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.CNAEInfo'
+        type: array
+      cnpj:
+        example: 11.222.333/0001-81
+        type: string
+      consultado_em:
+        example: "2024-01-15T10:30:00Z"
+        type: string
+      data_inicio_atividade:
+        example: 03/11/2005
+        type: string
+      data_situacao:
+        example: 03/11/2005
+        type: string
+      data_situacao_especial:
+        type: string
+      email:
+        type: string
+      endereco:
+        $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.EnderecoInfo'
+      ente_federativo_responsavel:
+        type: string
+      motivo_situacao:
+        example: SEM MOTIVO
+        type: string
+      natureza_juridica:
+        example: 206-2 - SOCIEDADE EMPRESÁRIA LIMITADA
+        type: string
+      nome_fantasia:
+        example: Empresa Exemplo
+        type: string
+      porte:
+        example: DEMAIS
+        type: string
+      qualificacao_responsavel:
+        type: string
+      razao_social:
+        example: EMPRESA EXEMPLO LTDA
+        type: string
+      situacao:
+        example: ATIVA
+        type: string
+      situacao_especial:
+        type: string
+      socios:
+        items:
+          $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.SocioInfo'
+        type: array
+      telefones:
+        items:
+          type: string
+        type: array
+      tempo_consulta_ms:
+        example: 2500
+        type: integer
+      tipo_empresa:
+        example: MATRIZ
+        type: string
+    type: object
+  github_com_nexconsult_cnpj-api_internal_models.CacheMetrics:
+    properties:
+      hit_rate:
+        example: 85.5
+        type: number
+      hits:
+        example: 1240
+        type: integer
+      misses:
+        example: 210
+        type: integer
+      size:
+        example: 15000
+        type: integer
+    type: object
+  github_com_nexconsult_cnpj-api_internal_models.EnderecoInfo:
+    properties:
+      bairro:
+        example: CENTRO
+        type: string
+      cep:
+        example: 01234-567
+        type: string
+      complemento:
+        example: SALA 456
+        type: string
+      logradouro:
+        example: RUA EXEMPLO
+        type: string
+      municipio:
+        example: SÃO PAULO
+        type: string
+      numero:
+        example: "123"
+        type: string
+      uf:
+        example: SP
+        type: string
+    type: object
+  github_com_nexconsult_cnpj-api_internal_models.ErrorResponse:
+    properties:
+      code:
+        example: INVALID_CNPJ
+        type: string
+      error:
+        example: Invalid CNPJ format
+        type: string
+      message:
+        example: CNPJ must contain exactly 14 digits
+        type: string
+      path:
+        example: /api/v1/cnpj/11222333000181
+        type: string
+      timestamp:
+        example: "2024-01-15T10:30:00Z"
+        type: string
+    type: object
+  github_com_nexconsult_cnpj-api_internal_models.HealthResponse:
+    properties:
+      services:
+        additionalProperties:
+          $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.ServiceInfo'
+        type: object
+      status:
+        example: healthy
+        type: string
+      timestamp:
+        example: "2024-01-15T10:30:00Z"
+        type: string
+      uptime:
+        example: 2h30m45s
+        type: string
+      version:
+        example: 2.0.0
+        type: string
+    type: object
+  github_com_nexconsult_cnpj-api_internal_models.MetricsResponse:
+    properties:
+      browser:
+        $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.BrowserMetrics'
+      cache:
+        $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.CacheMetrics'
+      performance:
+        $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.PerformanceMetrics'
+      requests:
+        $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.RequestsMetrics'
+      system:
+        $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.SystemMetrics'
+      timestamp:
+        example: "2024-01-15T10:30:00Z"
+        type: string
+    type: object
+  github_com_nexconsult_cnpj-api_internal_models.PerformanceMetrics:
+    properties:
+      avg_response_time_ms:
+        example: 2500
+        type: integer
+      p95_response_time_ms:
+        example: 5200
+        type: integer
+      p99_response_time_ms:
+        example: 8100
+        type: integer
+    type: object
+  github_com_nexconsult_cnpj-api_internal_models.RequestsMetrics:
+    properties:
+      errors:
+        example: 50
+        type: integer
+      success:
+        example: 1450
+        type: integer
+      success_rate:
+        example: 96.67
+        type: number
+      total:
+        example: 1500
+        type: integer
+    type: object
+  github_com_nexconsult_cnpj-api_internal_models.ServiceInfo:
+    properties:
+      error:
+        type: string
+      last_check:
+        example: "2024-01-15T10:30:00Z"
+        type: string
+      response_time_ms:
+        example: 150
+        type: integer
+      status:
+        example: healthy
+        type: string
+    type: object
+  github_com_nexconsult_cnpj-api_internal_models.SocioInfo:
+    properties:
+      cpf_cnpj_socio:
+        example: '***123456**'
+        type: string
+      data_entrada_sociedade:
+        example: 03/11/2005
+        type: string
+      nome:
+        example: JOÃO DA SILVA
+        type: string
+      pais_origem:
+        example: BRASIL
+        type: string
+      qualificacao_representante:
+        type: string
+      qualificacao_socio:
+        example: 49-SÓCIO-ADMINISTRADOR
+        type: string
+      representante_legal:
+        type: string
+    type: object
+  github_com_nexconsult_cnpj-api_internal_models.SystemMetrics:
+    properties:
+      cpu_usage:
+        example: 45.2
+        type: number
+      goroutines:
+        example: 125
+        type: integer
+      memory_usage:
+        example: 512.5
+        type: number
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@nexconsult.com
+    name: API Support
+    url: http://www.nexconsult.com/support
+  description: High-performance CNPJ consultation API built with Go
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  termsOfService: http://swagger.io/terms/
+  title: CNPJ Consultation API
+  version: "2.0"
+paths:
+  /browser/health:
+    get:
+      description: Get the health status of the browser pool
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.ErrorResponse'
+      summary: Get browser pool health
+      tags:
+      - Browser
+  /browser/restart:
+    post:
+      description: Restart all browsers in the pool
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.ErrorResponse'
+      summary: Restart browser pool
+      tags:
+      - Browser
+  /browser/stats:
+    get:
+      description: Get detailed browser pool statistics and metrics
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.ErrorResponse'
+      summary: Get browser pool statistics
+      tags:
+      - Browser
+  /cache/{cnpj}:
+    delete:
+      description: Delete a specific CNPJ entry from cache
+      parameters:
+      - description: CNPJ number to delete from cache
+        in: path
+        name: cnpj
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.ErrorResponse'
+      summary: Delete specific CNPJ from cache
+      tags:
+      - Cache
+  /cache/clear:
+    delete:
+      description: Clear all cached CNPJ data
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.ErrorResponse'
+      summary: Clear all cache
+      tags:
+      - Cache
+  /cache/stats:
+    get:
+      description: Get detailed cache statistics and metrics
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.ErrorResponse'
+      summary: Get cache statistics
+      tags:
+      - Cache
+  /cnpj/{cnpj}:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve detailed information about a CNPJ from Receita Federal
+      parameters:
+      - description: CNPJ number (14 digits)
+        example: "11222333000181"
+        in: path
+        name: cnpj
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.CNPJResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.ErrorResponse'
+      summary: Get CNPJ information
+      tags:
+      - CNPJ
+  /cnpj/batch:
+    post:
+      consumes:
+      - application/json
+      description: Retrieve detailed information about multiple CNPJs from Receita
+        Federal
+      parameters:
+      - description: Batch CNPJ request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.BatchRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.BatchResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.ErrorResponse'
+      summary: Get multiple CNPJ information
+      tags:
+      - CNPJ
+  /health:
+    get:
+      description: Get the health status of the API and its dependencies
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.HealthResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.ErrorResponse'
+      summary: Health check
+      tags:
+      - Health
+  /health/live:
+    get:
+      description: Check if the API is alive and responding
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Liveness check
+      tags:
+      - Health
+  /health/ready:
+    get:
+      description: Check if the API is ready to serve requests
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.ErrorResponse'
+      summary: Readiness check
+      tags:
+      - Health
+  /metrics:
+    get:
+      description: Get detailed application metrics and statistics
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_nexconsult_cnpj-api_internal_models.MetricsResponse'
+      summary: Get application metrics
+      tags:
+      - Metrics
+schemes:
+- http
+- https
+securityDefinitions:
+  ApiKeyAuth:
+    in: header
+    name: X-API-Key
+    type: apiKey
+swagger: "2.0"

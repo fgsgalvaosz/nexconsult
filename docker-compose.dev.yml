@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: cnpj-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - cnpj-dev
+
+  # PostgreSQL for data persistence
+  postgres:
+    image: postgres:15-alpine
+    container_name: cnpj-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=cnpj_api
+      - POSTGRES_USER=cnpj_user
+      - POSTGRES_PASSWORD=cnpj_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cnpj_user -d cnpj_api"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - cnpj-dev
+
+  # Redis Commander (optional - web UI for Redis)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: cnpj-redis-commander
+    hostname: redis-commander
+    ports:
+      - "8081:8081"
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    depends_on:
+      - redis
+    networks:
+      - cnpj-dev
+
+  # pgAdmin (optional - web UI for PostgreSQL)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: cnpj-pgadmin
+    ports:
+      - "8082:80"
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@cnpj-api.com
+      - PGADMIN_DEFAULT_PASSWORD=admin123
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - cnpj-dev
+
+volumes:
+  redis_data:
+    driver: local
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  cnpj-dev:
+    driver: bridge

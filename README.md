@@ -1,195 +1,245 @@
-# 🚀 CNPJ API - Consulta Automatizada
+# CNPJ API
 
-Uma API REST moderna e otimizada para consulta automática de CNPJ na Receita Federal do Brasil, com resolução automática de hCaptcha e extração completa de dados.
+API para consulta de CNPJs na Receita Federal do Brasil, construída com Go e Gin.
 
-## ✨ Funcionalidades
+## 🚀 Características
 
-- 🔍 **Consulta automática de CNPJ** - Automação completa do processo
-- 🤖 **Resolução automática de hCaptcha** - Integração com SolveCaptcha API
-- 📊 **Extração completa de dados** - Todos os campos disponíveis
-- ⚡ **Sistema de cache inteligente** - Respostas instantâneas para consultas repetidas
-- 🔧 **Pool de browsers** - Performance otimizada com reutilização de recursos
-- 📚 **Documentação Swagger** - Interface interativa para testes
-- 🛡️ **Tratamento robusto de erros** - Retry automático e recuperação
-- 📈 **Monitoramento de performance** - Métricas detalhadas de execução
+- **Alta Performance**: Construída com Go para máxima eficiência
+- **Cache Inteligente**: Redis para cache com fallback em memória
+- **Pool de Browsers**: Gerenciamento automático de browsers Chrome/Chromium
+- **Rate Limiting**: Proteção contra abuso da API
+- **Documentação Swagger**: Interface interativa para testes
+- **Monitoramento**: Health checks e métricas detalhadas
+- **Consulta em Lote**: Suporte para múltiplas consultas simultâneas
 
-## 🏗️ Arquitetura
+## 📋 Pré-requisitos
 
-```
-src/
-├── config/              # Configurações centralizadas
-├── controllers/         # Controladores da API
-├── services/           # Lógica de negócio e automação
-├── routes/             # Definição das rotas
-├── middleware/         # Middlewares (logs, errors)
-├── utils/              # Utilitários e validadores
-└── server.js           # Servidor principal
-```
+- Go 1.21+
+- Docker e Docker Compose
+- Make (opcional, mas recomendado)
 
-## 🚀 Instalação Rápida
+## 🛠️ Configuração de Desenvolvimento
 
+### 1. Clone o repositório
 ```bash
-# Clone o repositório
 git clone <repository-url>
-cd nexconsult
-
-# Instale as dependências
-npm install
-
-# Configure sua chave de API
-# Edite src/config/index.js e adicione sua chave do SolveCaptcha
-
-# Execute em desenvolvimento
-npm run dev
-
-# Ou em produção
-npm start
+cd cnpj-api
 ```
 
-## 📡 API Endpoints
+### 2. Configuração completa (recomendado)
+```bash
+make setup
+```
 
-### 🔍 Consulta de CNPJ
-```http
-POST /api/cnpj/consultar
+Este comando irá:
+- Instalar dependências Go
+- Instalar ferramentas de desenvolvimento
+- Iniciar serviços Docker (Redis, PostgreSQL)
+- Gerar documentação Swagger
+
+### 3. Configuração manual (alternativa)
+
+#### Instalar dependências
+```bash
+make deps
+```
+
+#### Instalar ferramentas de desenvolvimento
+```bash
+make dev-tools
+```
+
+#### Iniciar serviços de desenvolvimento
+```bash
+make docker-up
+```
+
+#### Gerar documentação Swagger
+```bash
+make swagger
+```
+
+## 🏃‍♂️ Executando a Aplicação
+
+### Desenvolvimento com Hot Reload
+```bash
+make dev
+```
+
+### Execução simples
+```bash
+make run
+```
+
+### Início rápido (serviços + aplicação)
+```bash
+make start
+```
+
+## 🐳 Serviços de Desenvolvimento
+
+O Docker Compose inclui:
+
+- **Redis** (localhost:6379) - Cache
+- **PostgreSQL** (localhost:5432) - Banco de dados
+- **Redis Commander** (http://localhost:8081) - Interface web para Redis
+- **pgAdmin** (http://localhost:8082) - Interface web para PostgreSQL
+  - Email: admin@cnpj-api.com
+  - Senha: admin123
+
+### Comandos Docker
+```bash
+# Iniciar serviços
+make docker-up
+
+# Parar serviços
+make docker-down
+
+# Ver logs
+make docker-logs
+
+# Limpeza completa
+make docker-clean
+```
+
+## 📚 Documentação da API
+
+Após iniciar a aplicação, acesse:
+- **Swagger UI**: http://localhost:8080/swagger/index.html
+- **API Base**: http://localhost:8080/api/v1
+
+### Endpoints Principais
+
+#### Consulta CNPJ
+```bash
+GET /api/v1/cnpj/{cnpj}
+```
+
+#### Consulta em Lote
+```bash
+POST /api/v1/cnpj/batch
 Content-Type: application/json
 
 {
-  "cnpj": "38.139.407/0001-77",
-  "apiKey": "sua_chave_api_opcional"
+  "cnpjs": ["11222333000181", "11333444000172"]
 }
 ```
 
-### 📊 Gerenciamento de Cache
-```http
-GET /api/cnpj/cache/stats          # Estatísticas do cache
-DELETE /api/cnpj/cache/clear       # Limpar cache
+#### Health Check
+```bash
+GET /health
 ```
 
-### ⚡ Performance e Monitoramento
-```http
-GET /api/cnpj/performance/browser-pool    # Stats do pool de browsers
-POST /api/cnpj/performance/cleanup        # Limpeza do pool
-GET /api/cnpj/status                       # Status do serviço
-GET /health                                # Health check
+#### Métricas
+```bash
+GET /metrics
 ```
 
-### 📚 Documentação
-```http
-GET /                              # Interface Swagger
-```
-
-## 📋 Resposta da API
-
-```json
-{
-  "success": true,
-  "cnpj": "38.139.407/0001-77",
-  "consultedAt": "2025-08-22T12:00:00.000Z",
-  "source": "Receita Federal do Brasil",
-  "identificacao": {
-    "cnpj": "38.139.407/0001-77",
-    "tipo": "MATRIZ",
-    "dataAbertura": "18/08/2020",
-    "nomeEmpresarial": "FERRAZ AUTO CENTER LTDA",
-    "nomeFantasia": "FERRAZ AUTO CENTER",
-    "porte": "ME",
-    "naturezaJuridica": "206-2 - Sociedade Empresária Limitada"
-  },
-  "atividades": {
-    "principal": "45.30-7-05 - Comércio a varejo de pneumáticos e câmaras-de-ar",
-    "secundarias": ["..."]
-  },
-  "endereco": {
-    "logradouro": "R GUANABARA",
-    "numero": "123",
-    "cep": "65.913-447",
-    "bairro": "ENTRONCAMENTO",
-    "municipio": "IMPERATRIZ",
-    "uf": "MA"
-  },
-  "contato": {
-    "email": "",
-    "telefone": "(99) 8160-6486"
-  },
-  "situacao": {
-    "cadastral": {
-      "situacao": "ATIVA",
-      "data": "18/08/2020"
-    }
-  },
-  "metadata": {
-    "extractionMethod": "automated_browser_with_html_parsing",
-    "captchaSolved": true,
-    "dataQuality": "high",
-    "version": "1.0.0"
-  }
-}
-```
-
-## ⚡ Performance
-
-- **65% mais rápido** que implementações tradicionais
-- **99% mais rápido** para consultas em cache
-- **Pool de browsers** para reutilização de recursos
-- **Timeouts otimizados** para máxima eficiência
-- **Retry automático** em caso de falhas
-
-## 🛠️ Tecnologias
-
-- **Node.js** - Runtime JavaScript
-- **Express.js** - Framework web minimalista
-- **Puppeteer** - Automação de navegador
-- **JSDOM** - Parser HTML otimizado
-- **Swagger** - Documentação interativa
-- **SolveCaptcha API** - Resolução de captcha
-
-## 📊 Scripts Disponíveis
+## 🔧 Comandos Make Disponíveis
 
 ```bash
-npm start          # Produção
-npm run dev        # Desenvolvimento com hot-reload
-npm test           # Testes (quando implementados)
+make help          # Mostra todos os comandos disponíveis
+make build         # Compila a aplicação
+make run           # Compila e executa
+make dev           # Modo desenvolvimento com hot reload
+make test          # Executa testes
+make test-coverage # Testes com relatório de cobertura
+make clean         # Limpa artefatos de build
+make fmt           # Formata código Go
+make lint          # Executa linter
+make security      # Verificações de segurança
+make swagger       # Gera documentação Swagger
 ```
 
-## 🔧 Configuração
+## ⚙️ Configuração
 
-Edite `src/config/index.js`:
+A aplicação usa variáveis de ambiente definidas no arquivo `.env`. As principais configurações:
 
-```javascript
-module.exports = {
-    SOLVE_CAPTCHA_API_KEY: 'sua_chave_api_aqui',
-    DEFAULT_CNPJ: '38139407000177',
-    CONSULTA_URL: 'https://solucoes.receita.fazenda.gov.br/servicos/cnpjreva/cnpjreva_solicitacao.asp'
-};
+### Servidor
+- `PORT`: Porta da aplicação (padrão: 8080)
+- `ENVIRONMENT`: Ambiente (development/production)
+
+### Redis
+- `REDIS_HOST`: Host do Redis (padrão: localhost)
+- `REDIS_PORT`: Porta do Redis (padrão: 6379)
+
+### PostgreSQL
+- `DB_HOST`: Host do banco (padrão: localhost)
+- `DB_PORT`: Porta do banco (padrão: 5432)
+- `DB_USER`: Usuário do banco
+- `DB_PASSWORD`: Senha do banco
+
+### CNPJ Service
+- `SOLVE_CAPTCHA_API_KEY`: Chave da API SolveCaptcha
+- `CNPJ_TIMEOUT`: Timeout para consultas (segundos)
+
+### Rate Limiting
+- `RATE_LIMIT_RPM`: Requests por minuto (padrão: 1000)
+- `RATE_LIMIT_BURST`: Burst size (padrão: 50)
+
+## 🧪 Testes
+
+```bash
+# Executar todos os testes
+make test
+
+# Testes com cobertura
+make test-coverage
+
+# Teste de endpoint específico
+curl http://localhost:8080/health
 ```
 
-## 📈 Monitoramento
+## 📊 Monitoramento
 
-A API inclui métricas detalhadas:
-- Tempo de execução por consulta
-- Taxa de sucesso do captcha
-- Estatísticas do cache
-- Performance do pool de browsers
+### Health Checks
+- `/health` - Status geral da aplicação
+- `/health/ready` - Readiness probe
+- `/health/live` - Liveness probe
 
-## 📚 Documentação Adicional
+### Métricas
+- `/metrics` - Métricas da aplicação em JSON
 
-- [Otimizações de Performance](docs/OTIMIZACOES.md)
-- Interface Swagger: `http://localhost:3000`
+### Logs
+A aplicação gera logs estruturados em JSON com informações detalhadas sobre:
+- Requests HTTP
+- Performance
+- Erros
+- Cache hits/misses
+- Status dos browsers
+
+## 🔒 Segurança
+
+- Rate limiting por IP
+- Headers de segurança (CSP, HSTS, etc.)
+- Validação de entrada
+- Sanitização de dados
+- Autenticação por token para endpoints administrativos
+
+## 🚀 Deploy
+
+Para produção, configure as variáveis de ambiente apropriadas e:
+
+```bash
+# Build para produção
+go build -o cnpj-api cmd/api/main.go
+
+# Executar
+./cnpj-api
+```
 
 ## 🤝 Contribuição
 
 1. Fork o projeto
-2. Crie uma branch (`git checkout -b feature/nova-funcionalidade`)
-3. Commit suas mudanças (`git commit -m 'Adiciona nova funcionalidade'`)
-4. Push para a branch (`git push origin feature/nova-funcionalidade`)
+2. Crie uma branch para sua feature (`git checkout -b feature/AmazingFeature`)
+3. Commit suas mudanças (`git commit -m 'Add some AmazingFeature'`)
+4. Push para a branch (`git push origin feature/AmazingFeature`)
 5. Abra um Pull Request
 
-## ⚖️ Licença
+## 📝 Licença
 
-Este projeto é para fins educacionais e de automação legítima. Use com responsabilidade e respeite os termos de uso da Receita Federal.
+Este projeto está sob a licença MIT. Veja o arquivo `LICENSE` para detalhes.
 
 ## 🆘 Suporte
 
-- Abra uma [issue](../../issues) para reportar bugs
-- Consulte a [documentação](docs/) para guias detalhados
-- Verifique o [Swagger](http://localhost:3000) para testes da API
+Para suporte, abra uma issue no repositório ou entre em contato com a equipe de desenvolvimento.
