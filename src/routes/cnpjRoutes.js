@@ -107,4 +107,77 @@ router.get('/status', cnpjController.getStatus);
  */
 router.post('/consultar', cnpjController.consultarCNPJ);
 
+/**
+ * @swagger
+ * /api/cnpj/cache/clear:
+ *   delete:
+ *     summary: Limpar cache de consultas
+ *     tags: [Cache]
+ *     responses:
+ *       200:
+ *         description: Cache limpo com sucesso
+ */
+router.delete('/cache/clear', cnpjController.clearCache);
+
+/**
+ * @swagger
+ * /api/cnpj/cache/stats:
+ *   get:
+ *     summary: Obter estatísticas do cache
+ *     tags: [Cache]
+ *     responses:
+ *       200:
+ *         description: Estatísticas do cache
+ */
+router.get('/cache/stats', cnpjController.getCacheStats);
+
+/**
+ * @swagger
+ * /api/cnpj/performance/browser-pool:
+ *   get:
+ *     summary: Obter estatísticas do pool de browsers
+ *     tags: [Performance]
+ *     responses:
+ *       200:
+ *         description: Estatísticas do pool de browsers
+ */
+router.get('/performance/browser-pool', cnpjController.getBrowserPoolStats);
+
+/**
+ * @swagger
+ * /api/cnpj/performance/cleanup:
+ *   post:
+ *     summary: Limpar pool de browsers
+ *     tags: [Performance]
+ *     responses:
+ *       200:
+ *         description: Pool de browsers limpo com sucesso
+ */
+router.post('/performance/cleanup', cnpjController.cleanupBrowserPool);
+
+/**
+ * @swagger
+ * /api/cnpj/logs/recent:
+ *   get:
+ *     summary: Obter logs recentes
+ *     tags: [Logs]
+ *     parameters:
+ *       - in: query
+ *         name: level
+ *         schema:
+ *           type: string
+ *           enum: [error, warn, info, debug]
+ *         description: Nível de log para filtrar
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 100
+ *         description: Número máximo de logs para retornar
+ *     responses:
+ *       200:
+ *         description: Logs recentes
+ */
+router.get('/logs/recent', cnpjController.getRecentLogs);
+
 module.exports = router;

@@ -9,5 +9,10 @@ module.exports = {
     DEFAULT_CNPJ: '38139407000177',
     
     // URL da página de consulta
-    CONSULTA_URL: 'https://solucoes.receita.fazenda.gov.br/servicos/cnpjreva/cnpjreva_solicitacao.asp'
+    CONSULTA_URL: 'https://solucoes.receita.fazenda.gov.br/servicos/cnpjreva/cnpjreva_solicitacao.asp',
+
+    // Configurações de resiliência
+    CAPTCHA_MAX_RETRIES: 40,
+    CAPTCHA_BASE_DELAY: 2000,
+    CAPTCHA_MAX_BACKOFF: 10000
 };

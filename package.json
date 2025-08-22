@@ -6,10 +6,14 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "consulta": "node consulta-cnpj.js",
-    "extrair": "node extrair-dados.js",
-    "example": "node exemplo-uso.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "logs": "tail -f logs/combined-$(date +%Y-%m-%d).log | pino-pretty",
+    "logs:error": "tail -f logs/error-$(date +%Y-%m-%d).log | pino-pretty",
+    "logs:app": "tail -f logs/app-$(date +%Y-%m-%d).log | pino-pretty",
+    "clean": "rm -rf *.html *.json logs/ tmp/",
+    "backtest": "node scripts/backtest-cnpjs.js",
+    "backtest:run": "./scripts/run-backtest.sh",
+    "analyze-errors": "node scripts/analyze-errors.js"
   },
   "keywords": [
     "cnpj",
@@ -20,13 +24,17 @@
   "author": "Automacao CNPJ",
   "license": "MIT",
   "dependencies": {
+    "axios": "1.11.0",
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "express-rate-limit": "^6.8.1",
+    "form-data": "4.0.4",
     "helmet": "^7.0.0",
     "jsdom": "^23.0.0",
+    "pino": "8.21.0",
+    "pino-pretty": "10.3.1",
+    "pino-roll": "1.3.0",
     "puppeteer": "24.17.0",
-    "request": "^2.88.2",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.0"
   },

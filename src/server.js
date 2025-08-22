@@ -9,13 +9,16 @@ const healthRoutes = require('./routes/healthRoutes');
 
 // Import middleware
 const errorHandler = require('./middleware/errorHandler');
-const logger = require('./middleware/logger');
+const { logger, apiLogger, logRequest, setupErrorHandling, systemLogger } = require('./utils/logger');
 
 // Import Swagger configuration
 const { specs, swaggerUi } = require('./config/swagger');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Setup error handling for uncaught exceptions
+setupErrorHandling();
 
 // Security middleware
 app.use(helmet({
@@ -58,8 +61,8 @@ const limiter = rateLimit({
 
 app.use('/api/', limiter);
 
-// Logging middleware
-app.use(logger);
+// Logging middleware (usando Winston)
+app.use(logRequest);
 
 // Swagger documentation
 app.use('/api/docs', swaggerUi.serve);
@@ -111,10 +114,19 @@ app.use(errorHandler);
 
 // Start server
 const server = app.listen(PORT, () => {
+    logger.info({
+        port: PORT,
+        environment: process.env.NODE_ENV || 'development',
+        documentation: `http://localhost:${PORT}`,
+        healthCheck: `http://localhost:${PORT}/health`,
+        logsDirectory: './logs/'
+    }, '🚀 CNPJ API Server started');
+
     console.log(`🚀 CNPJ API Server running on port ${PORT}`);
     console.log(`📖 Documentation available at: http://localhost:${PORT}`);
     console.log(`🔍 API Status: http://localhost:${PORT}/health`);
     console.log(`💡 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`📝 Logs directory: ./logs/`);
 });
 
 // Graceful shutdown
@@ -127,8 +139,10 @@ process.on('SIGTERM', () => {
 });
 
 process.on('SIGINT', () => {
+    systemLogger.info('SIGINT received, shutting down gracefully...');
     console.log('SIGINT received, shutting down gracefully...');
     server.close(() => {
+        systemLogger.info('Server closed, process terminated');
         console.log('Process terminated');
         process.exit(0);
     });

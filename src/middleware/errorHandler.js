@@ -1,13 +1,20 @@
 /**
  * Global error handling middleware
  */
+const { apiLogger } = require('../utils/logger');
+
 const errorHandler = (error, req, res, next) => {
-    console.error('Error occurred:', {
-        message: error.message,
+    // Log error with Winston
+    apiLogger.error('API Error occurred', {
+        error: error.message,
         stack: error.stack,
-        url: req.url,
         method: req.method,
+        url: req.url,
         ip: req.ip,
+        userAgent: req.get('User-Agent'),
+        body: req.body,
+        params: req.params,
+        query: req.query,
         timestamp: new Date().toISOString()
     });
 
