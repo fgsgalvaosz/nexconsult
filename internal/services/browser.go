@@ -127,22 +127,22 @@ func (s *BrowserService) ReleaseBrowser(browserCtx BrowserContext) error {
 
 // createBrowser creates a new browser context
 func (s *BrowserService) createBrowser() (*ChromeBrowserContext, error) {
-	// Chrome options for headless operation
+	// Chrome options for headless operation with anti-detection (based on Node.js version)
 	opts := []chromedp.ExecAllocatorOption{
+		chromedp.ExecPath("/usr/bin/google-chrome-stable"),
+		chromedp.Headless,
 		chromedp.NoFirstRun,
 		chromedp.NoDefaultBrowserCheck,
 		chromedp.DisableGPU,
 		chromedp.NoSandbox,
 		chromedp.Flag("disable-dev-shm-usage", true),
-		chromedp.Flag("disable-background-timer-throttling", true),
-		chromedp.Flag("disable-backgrounding-occluded-windows", true),
-		chromedp.Flag("disable-renderer-backgrounding", true),
-		chromedp.Flag("disable-features", "TranslateUI"),
-		chromedp.Flag("disable-ipc-flooding-protection", true),
-		chromedp.Flag("disable-web-security", true),
+		chromedp.Flag("disable-setuid-sandbox", true),
+		chromedp.Flag("disable-blink-features", "AutomationControlled"),
 		chromedp.Flag("disable-features", "VizDisplayCompositor"),
-		chromedp.WindowSize(1920, 1080),
-		chromedp.UserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36"),
+		chromedp.Flag("ignore-default-args", "enable-automation"),
+		chromedp.Flag("ignore-certificate-errors", true),
+		chromedp.WindowSize(1100, 639), // Same as Node.js version
+		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
 	}
 
 	if s.config.Headless {
@@ -153,8 +153,10 @@ func (s *BrowserService) createBrowser() (*ChromeBrowserContext, error) {
 	parentCtx := context.Background()
 	allocCtx, cancel := chromedp.NewExecAllocator(parentCtx, opts...)
 
-	// Create browser context with proper parent
-	ctx, ctxCancel := chromedp.NewContext(allocCtx)
+	// Create browser context with proper parent and debug logging
+	ctx, ctxCancel := chromedp.NewContext(allocCtx, chromedp.WithDebugf(func(format string, args ...interface{}) {
+		fmt.Printf("CHROMEDP DEBUG: "+format+"\n", args...)
+	}))
 
 	browserCtx := &ChromeBrowserContext{
 		id:       fmt.Sprintf("browser-%d", time.Now().UnixNano()),
@@ -164,14 +166,43 @@ func (s *BrowserService) createBrowser() (*ChromeBrowserContext, error) {
 		healthy:  true,
 	}
 
-	// Test browser health with a simple navigation
-	testCtx, testCancel := context.WithTimeout(ctx, 15*time.Second)
-	defer testCancel()
+	// Configure anti-detection JavaScript (based on Node.js version)
+	antiDetectionJS := `
+		// Remove webdriver property
+		Object.defineProperty(navigator, 'webdriver', {
+			get: () => undefined,
+		});
 
-	err := chromedp.Run(testCtx, chromedp.Navigate("about:blank"))
+		// Mock plugins
+		Object.defineProperty(navigator, 'plugins', {
+			get: () => [1, 2, 3, 4, 5],
+		});
+
+		// Mock languages
+		Object.defineProperty(navigator, 'languages', {
+			get: () => ['pt-BR', 'pt', 'en'],
+		});
+
+		// Natural permissions
+		if (navigator.permissions && navigator.permissions.query) {
+			const originalQuery = navigator.permissions.query;
+			navigator.permissions.query = (parameters) => (
+				parameters.name === 'notifications' ?
+					Promise.resolve({ state: 'default' }) :
+					originalQuery(parameters)
+			);
+		}
+	`
+
+	// CRITICAL: First chromedp.Run call must be without timeout to allocate browser
+	// This is the key fix based on chromedp documentation
+	err := chromedp.Run(ctx,
+		chromedp.Navigate("about:blank"),
+		chromedp.Evaluate(antiDetectionJS, nil),
+	)
 	if err != nil {
 		browserCtx.Close()
-		return nil, fmt.Errorf("browser health check failed: %w", err)
+		return nil, fmt.Errorf("browser configuration failed: %w", err)
 	}
 
 	s.logger.WithField("browser_id", browserCtx.id).Debug("Browser created successfully")
@@ -272,7 +303,7 @@ func (s *BrowserService) Close() error {
 
 // ChromeBrowserContext methods
 
-// Navigate navigates to a URL
+// Navigate navigates to a URL using the correct chromedp pattern
 func (c *ChromeBrowserContext) Navigate(ctx context.Context, url string) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -281,7 +312,26 @@ func (c *ChromeBrowserContext) Navigate(ctx context.Context, url string) error {
 		return fmt.Errorf("browser context is not healthy")
 	}
 
-	return chromedp.Run(c.chromedp, chromedp.Navigate(url))
+	// Use the chromedp context directly as per documentation
+	fmt.Printf("DEBUG: Starting navigation to %s\n", url)
+
+	err := chromedp.Run(c.chromedp,
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			fmt.Printf("DEBUG: Navigation action started\n")
+			return nil
+		}),
+		chromedp.Navigate(url),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			fmt.Printf("DEBUG: Navigation completed\n")
+			return nil
+		}),
+	)
+
+	if err != nil {
+		fmt.Printf("DEBUG: Navigation failed: %v\n", err)
+	}
+
+	return err
 }
 
 // WaitForSelector waits for an element to appear
@@ -317,7 +367,7 @@ func (c *ChromeBrowserContext) Type(ctx context.Context, selector, text string) 
 		return fmt.Errorf("browser context is not healthy")
 	}
 
-	return chromedp.Run(ctx, chromedp.SendKeys(selector, text))
+	return chromedp.Run(c.chromedp, chromedp.SendKeys(selector, text))
 }
 
 // GetText gets text content from an element
@@ -329,8 +379,12 @@ func (c *ChromeBrowserContext) GetText(ctx context.Context, selector string) (st
 		return "", fmt.Errorf("browser context is not healthy")
 	}
 
+	// Create a timeout context from the browser context
+	timeoutCtx, cancel := context.WithTimeout(c.chromedp, 30*time.Second)
+	defer cancel()
+
 	var text string
-	err := chromedp.Run(ctx, chromedp.Text(selector, &text))
+	err := chromedp.Run(timeoutCtx, chromedp.Text(selector, &text))
 	return text, err
 }
 
@@ -344,7 +398,7 @@ func (c *ChromeBrowserContext) GetHTML(ctx context.Context) (string, error) {
 	}
 
 	var html string
-	err := chromedp.Run(ctx, chromedp.OuterHTML("html", &html))
+	err := chromedp.Run(c.chromedp, chromedp.OuterHTML("html", &html))
 	return html, err
 }
 
@@ -358,7 +412,7 @@ func (c *ChromeBrowserContext) Screenshot(ctx context.Context) ([]byte, error) {
 	}
 
 	var buf []byte
-	err := chromedp.Run(ctx, chromedp.Screenshot("body", &buf, chromedp.NodeVisible))
+	err := chromedp.Run(c.chromedp, chromedp.Screenshot("body", &buf, chromedp.NodeVisible))
 	return buf, err
 }
 
