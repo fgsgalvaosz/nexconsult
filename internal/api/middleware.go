@@ -5,7 +5,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
-	
+
 	"nexconsult/internal/logger"
 )
 
@@ -13,17 +13,17 @@ import (
 func LoggingMiddleware() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		start := time.Now()
-		
+
 		// Gera correlation ID se não existir
 		correlationID := c.Get("X-Correlation-ID")
 		if correlationID == "" {
 			correlationID = uuid.New().String()
 			c.Set("X-Correlation-ID", correlationID)
 		}
-		
+
 		// Adiciona correlation ID ao contexto
 		c.Locals("correlation_id", correlationID)
-		
+
 		// Log do request
 		log := logger.GetGlobalLogger().WithComponent("api").WithCorrelationID(correlationID)
 		log.InfoFields("HTTP request started", logger.Fields{
@@ -33,23 +33,23 @@ func LoggingMiddleware() fiber.Handler {
 			"user_agent": c.Get("User-Agent"),
 			"type":       "http_request",
 		})
-		
+
 		// Processa request
 		err := c.Next()
-		
+
 		// Calcula duração
 		duration := time.Since(start)
-		
+
 		// Log da response
 		fields := logger.Fields{
-			"method":     c.Method(),
-			"path":       c.Path(),
-			"status":     c.Response().StatusCode(),
-			"duration":   duration.String(),
-			"ip":         c.IP(),
-			"type":       "http_response",
+			"method":   c.Method(),
+			"path":     c.Path(),
+			"status":   c.Response().StatusCode(),
+			"duration": duration.String(),
+			"ip":       c.IP(),
+			"type":     "http_response",
 		}
-		
+
 		if err != nil {
 			fields["error"] = err.Error()
 			log.ErrorFields("HTTP request failed", fields)
@@ -64,7 +64,7 @@ func LoggingMiddleware() fiber.Handler {
 				log.InfoFields("HTTP request completed successfully", fields)
 			}
 		}
-		
+
 		return err
 	}
 }
@@ -78,7 +78,7 @@ func RecoveryMiddleware() fiber.Handler {
 				if correlationID == nil {
 					correlationID = "unknown"
 				}
-				
+
 				log := logger.GetGlobalLogger().WithComponent("api").WithCorrelationID(correlationID.(string))
 				log.ErrorFields("Panic recovered", logger.Fields{
 					"panic":  r,
@@ -87,7 +87,7 @@ func RecoveryMiddleware() fiber.Handler {
 					"ip":     c.IP(),
 					"type":   "panic_recovery",
 				})
-				
+
 				// Retorna erro 500
 				c.Status(500).JSON(fiber.Map{
 					"error":          "Internal Server Error",
@@ -95,7 +95,7 @@ func RecoveryMiddleware() fiber.Handler {
 				})
 			}
 		}()
-		
+
 		return c.Next()
 	}
 }

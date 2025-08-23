@@ -26,11 +26,44 @@ git clone <repo-url>
 cd nexconsult
 
 # Configure as variáveis de ambiente
-export SOLVECAPTCHA_API_KEY="sua-chave-aqui"
+cp .env.example .env
+# Edite o arquivo .env com suas configurações
+
+# Instale ferramentas de desenvolvimento (opcional)
+make install
 
 # Compile e execute
-go build -o cnpj-consultor .
-./cnpj-consultor
+make build
+make run
+```
+
+### 🛠️ Comandos Make Disponíveis
+
+```bash
+# Desenvolvimento
+make dev          # Executa com hot reload
+make build        # Compila a aplicação
+make run          # Executa a aplicação
+make clean        # Remove arquivos de build
+
+# Qualidade de código
+make fmt          # Formata o código
+make vet          # Executa go vet
+make lint         # Executa linter
+make test         # Executa testes
+make check        # Executa todas as verificações
+
+# Documentação
+make swagger      # Gera documentação Swagger
+
+# Docker
+make docker-build # Constrói imagem Docker
+make docker-run   # Executa container
+
+# Utilitários
+make deps         # Atualiza dependências
+make info         # Mostra informações do projeto
+make help         # Lista todos os comandos
 ```
 
 ### Uso da API

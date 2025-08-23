@@ -11,6 +11,9 @@ go.work
 # Build artifacts
 cnpj-consultor
 cnpj-consultor.exe
+nexconsult
+nexconsult.exe
+bin/
 dist/
 build/
 
@@ -42,6 +45,8 @@ logs/
 
 # Coverage
 coverage.txt
+coverage.out
+coverage.html
 *.cover
 *.coverprofile
 
@@ -51,6 +56,10 @@ vendor/
 # Temporary files
 tmp/
 temp/
+
+# Development tools
+build-errors.log
+air_tmp/
 
 # Legacy Python (moved to legacy/)
 __pycache__/

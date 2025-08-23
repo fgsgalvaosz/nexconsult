@@ -13,6 +13,7 @@ import (
 	"github.com/go-rod/rod/lib/proto"
 
 	"nexconsult/internal/captcha"
+	"nexconsult/internal/logger"
 	"nexconsult/internal/types"
 )
 
@@ -43,6 +44,7 @@ type BrowserManager struct {
 	inUse       []bool      // Track which browsers are in use
 	lastUsed    []time.Time // Track last usage for cleanup
 	maxIdleTime time.Duration
+	logger      logger.Logger
 }
 
 // NewBrowserManager cria um novo gerenciador de browsers
@@ -54,17 +56,30 @@ func NewBrowserManager(size int, headless bool) *BrowserManager {
 		inUse:       make([]bool, size),
 		lastUsed:    make([]time.Time, size),
 		maxIdleTime: DefaultMaxIdleTime,
+		logger:      logger.GetGlobalLogger().WithComponent("browser-manager"),
 	}
 }
 
 // Start inicializa o pool de browsers
 func (bm *BrowserManager) Start() error {
+	start := time.Now()
+	bm.logger.InfoFields("Starting browser pool initialization", logger.Fields{
+		"pool_size": bm.size,
+		"headless":  bm.headless,
+	})
+
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
 	for i := 0; i < bm.size; i++ {
 		browser, err := bm.createBrowser()
 		if err != nil {
+			bm.logger.ErrorFields("Failed to create browser during pool initialization", logger.Fields{
+				"browser_index": i,
+				"error":         err.Error(),
+				"created_count": len(bm.browsers),
+			})
+
 			// Cleanup browsers já criados
 			for _, b := range bm.browsers {
 				b.Close()
@@ -72,9 +87,19 @@ func (bm *BrowserManager) Start() error {
 			return fmt.Errorf("failed to create browser %d: %v", i, err)
 		}
 		bm.browsers = append(bm.browsers, browser)
+
+		bm.logger.DebugFields("Browser created successfully", logger.Fields{
+			"browser_index": i,
+			"total_created": len(bm.browsers),
+		})
 	}
 
-	// logger.GetGlobalLogger().WithComponent("browser").InfoFields("Browser pool initialized", logger.Fields{"count": bm.size})
+	duration := time.Since(start)
+	bm.logger.InfoFields("Browser pool initialized successfully", logger.Fields{
+		"pool_size": bm.size,
+		"duration":  duration.String(),
+	})
+
 	return nil
 }
 
@@ -84,7 +109,16 @@ func (bm *BrowserManager) GetBrowser() *rod.Browser {
 	defer bm.mu.Unlock()
 
 	if len(bm.browsers) == 0 {
+		bm.logger.Error("No browsers available in pool")
 		return nil
+	}
+
+	// Conta browsers em uso para métricas
+	inUseCount := 0
+	for _, used := range bm.inUse {
+		if used {
+			inUseCount++
+		}
 	}
 
 	// Procura por um browser não em uso
@@ -94,6 +128,14 @@ func (bm *BrowserManager) GetBrowser() *rod.Browser {
 			bm.inUse[idx] = true
 			bm.lastUsed[idx] = time.Now()
 			bm.index = (idx + 1) % len(bm.browsers)
+
+			bm.logger.DebugFields("Browser allocated from pool", logger.Fields{
+				"browser_index": idx,
+				"in_use_count":  inUseCount + 1,
+				"pool_size":     len(bm.browsers),
+				"allocation":    "available",
+			})
+
 			return bm.browsers[idx]
 		}
 	}
@@ -101,7 +143,16 @@ func (bm *BrowserManager) GetBrowser() *rod.Browser {
 	// Se todos estão em uso, retorna o próximo na sequência (round-robin)
 	browser := bm.browsers[bm.index]
 	bm.lastUsed[bm.index] = time.Now()
+	oldIndex := bm.index
 	bm.index = (bm.index + 1) % len(bm.browsers)
+
+	bm.logger.WarnFields("All browsers in use, sharing browser instance", logger.Fields{
+		"browser_index": oldIndex,
+		"in_use_count":  inUseCount,
+		"pool_size":     len(bm.browsers),
+		"allocation":    "shared",
+	})
+
 	return browser
 }
 
@@ -112,8 +163,25 @@ func (bm *BrowserManager) ReleaseBrowser(browser *rod.Browser) {
 
 	for i, b := range bm.browsers {
 		if b == browser {
+			wasInUse := bm.inUse[i]
 			bm.inUse[i] = false
 			bm.lastUsed[i] = time.Now()
+
+			// Conta browsers ainda em uso
+			inUseCount := 0
+			for _, used := range bm.inUse {
+				if used {
+					inUseCount++
+				}
+			}
+
+			bm.logger.DebugFields("Browser released to pool", logger.Fields{
+				"browser_index":   i,
+				"was_in_use":      wasInUse,
+				"in_use_count":    inUseCount,
+				"pool_size":       len(bm.browsers),
+				"available_count": len(bm.browsers) - inUseCount,
+			})
 			break
 		}
 	}
@@ -121,18 +189,36 @@ func (bm *BrowserManager) ReleaseBrowser(browser *rod.Browser) {
 
 // Stop fecha todos os browsers
 func (bm *BrowserManager) Stop() {
+	bm.logger.InfoFields("Stopping browser pool", logger.Fields{
+		"pool_size": len(bm.browsers),
+	})
+
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
-	for _, browser := range bm.browsers {
-		browser.Close()
+	closedCount := 0
+	for i, browser := range bm.browsers {
+		if browser != nil {
+			browser.Close()
+			closedCount++
+			bm.logger.DebugFields("Browser closed", logger.Fields{
+				"browser_index": i,
+				"closed_count":  closedCount,
+			})
+		}
 	}
+
 	bm.browsers = nil
-	// logger.GetGlobalLogger().WithComponent("browser").Info("Browser pool stopped")
+	bm.logger.InfoFields("Browser pool stopped successfully", logger.Fields{
+		"closed_count": closedCount,
+	})
 }
 
 // createBrowser cria uma nova instância de browser otimizada
 func (bm *BrowserManager) createBrowser() (*rod.Browser, error) {
+	start := time.Now()
+	bm.logger.Debug("Creating new browser instance")
+
 	// Configurações do launcher
 	l := launcher.New().
 		Headless(bm.headless).
@@ -147,15 +233,41 @@ func (bm *BrowserManager) createBrowser() (*rod.Browser, error) {
 		Set("disable-renderer-backgrounding").
 		Set("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
+	bm.logger.Debug("Launching browser process")
+	launchStart := time.Now()
 	url, err := l.Launch()
 	if err != nil {
+		bm.logger.ErrorFields("Failed to launch browser", logger.Fields{
+			"error":    err.Error(),
+			"headless": bm.headless,
+			"duration": time.Since(launchStart).String(),
+		})
 		return nil, fmt.Errorf("failed to launch browser: %v", err)
 	}
 
+	bm.logger.DebugFields("Browser launched, connecting", logger.Fields{
+		"url":             url,
+		"launch_duration": time.Since(launchStart).String(),
+	})
+
+	connectStart := time.Now()
 	browser := rod.New().ControlURL(url)
 	if err := browser.Connect(); err != nil {
+		bm.logger.ErrorFields("Failed to connect to browser", logger.Fields{
+			"error":            err.Error(),
+			"url":              url,
+			"connect_duration": time.Since(connectStart).String(),
+		})
 		return nil, fmt.Errorf("failed to connect to browser: %v", err)
 	}
+
+	totalDuration := time.Since(start)
+	bm.logger.DebugFields("Browser created successfully", logger.Fields{
+		"total_duration":   totalDuration.String(),
+		"launch_duration":  time.Since(launchStart).String(),
+		"connect_duration": time.Since(connectStart).String(),
+		"headless":         bm.headless,
+	})
 
 	return browser, nil
 }
@@ -164,6 +276,7 @@ func (bm *BrowserManager) createBrowser() (*rod.Browser, error) {
 type CNPJExtractor struct {
 	captchaClient *captcha.SolveCaptchaClient
 	browserMgr    *BrowserManager
+	logger        logger.Logger
 }
 
 // NewCNPJExtractor cria um novo extrator
@@ -171,15 +284,26 @@ func NewCNPJExtractor(captchaClient *captcha.SolveCaptchaClient, browserMgr *Bro
 	return &CNPJExtractor{
 		captchaClient: captchaClient,
 		browserMgr:    browserMgr,
+		logger:        logger.GetGlobalLogger().WithComponent("cnpj-extractor"),
 	}
 }
 
 // ExtractCNPJData extrai dados de um CNPJ
 func (e *CNPJExtractor) ExtractCNPJData(cnpj string) (*types.CNPJData, error) {
 	start := time.Now()
+	correlationID := fmt.Sprintf("cnpj-%s-%d", cnpj, start.Unix())
+
+	e.logger.InfoFields("Starting CNPJ data extraction", logger.Fields{
+		"cnpj":           cnpj,
+		"correlation_id": correlationID,
+	})
 
 	browser := e.browserMgr.GetBrowser()
 	if browser == nil {
+		e.logger.ErrorFields("No browser available for CNPJ extraction", logger.Fields{
+			"cnpj":           cnpj,
+			"correlation_id": correlationID,
+		})
 		return nil, fmt.Errorf("no browser available")
 	}
 	defer e.browserMgr.ReleaseBrowser(browser) // Libera browser após uso
@@ -187,71 +311,149 @@ func (e *CNPJExtractor) ExtractCNPJData(cnpj string) (*types.CNPJData, error) {
 	// Cria nova página isolada com timeout otimizado
 	page, err := browser.Page(proto.TargetCreateTarget{})
 	if err != nil {
+		e.logger.ErrorFields("Failed to create browser page", logger.Fields{
+			"cnpj":           cnpj,
+			"correlation_id": correlationID,
+			"error":          err.Error(),
+		})
 		return nil, fmt.Errorf("failed to create page: %v", err)
 	}
 	defer page.Close()
 
 	// Configura página para performance
 	if err := e.configurePagePerformance(page); err != nil {
+		e.logger.WarnFields("Failed to configure page performance", logger.Fields{
+			"cnpj":           cnpj,
+			"correlation_id": correlationID,
+			"error":          err.Error(),
+		})
 		return nil, fmt.Errorf("failed to configure page: %v", err)
 	}
 
 	// Navega para página de consulta
 	url := fmt.Sprintf("https://solucoes.receita.fazenda.gov.br/servicos/cnpjreva/Cnpjreva_Solicitacao.asp?cnpj=%s", cnpj)
 
+	e.logger.DebugFields("Navigating to CNPJ consultation page", logger.Fields{
+		"cnpj":           cnpj,
+		"correlation_id": correlationID,
+		"url":            url,
+	})
+
 	err = page.Navigate(url)
 	if err != nil {
+		e.logger.ErrorFields("Failed to navigate to consultation page", logger.Fields{
+			"cnpj":           cnpj,
+			"correlation_id": correlationID,
+			"url":            url,
+			"error":          err.Error(),
+		})
 		return nil, fmt.Errorf("failed to navigate: %v", err)
 	}
 
 	err = page.WaitLoad()
 	if err != nil {
+		e.logger.ErrorFields("Failed to wait for page load", logger.Fields{
+			"cnpj":           cnpj,
+			"correlation_id": correlationID,
+			"url":            url,
+			"error":          err.Error(),
+		})
 		return nil, fmt.Errorf("failed to wait for page load: %v", err)
 	}
 
-	// 	// // logger.GetGlobalLogger().WithComponent("browser").DebugFields("Page loaded", logger.Fields{
-	// 		"cnpj": cnpj,
-	// 		"url":  url,
-	// 	}).Debug("Page loaded")
+	e.logger.DebugFields("Page loaded successfully", logger.Fields{
+		"cnpj":           cnpj,
+		"correlation_id": correlationID,
+		"load_duration":  time.Since(start).String(),
+	})
 
 	// Resolve captcha
-	// logger.GetGlobalLogger().WithComponent("browser").Debug("Starting captcha resolution")
+	captchaStart := time.Now()
+	e.logger.DebugFields("Starting captcha resolution", logger.Fields{
+		"cnpj":           cnpj,
+		"correlation_id": correlationID,
+	})
+
 	err = e.solveCaptcha(page)
 	if err != nil {
-		// logger.GetGlobalLogger().WithComponent("browser").WithError(err).Error("Captcha resolution failed")
+		e.logger.ErrorFields("Captcha resolution failed", logger.Fields{
+			"cnpj":           cnpj,
+			"correlation_id": correlationID,
+			"duration":       time.Since(captchaStart).String(),
+			"error":          err.Error(),
+		})
 		return nil, fmt.Errorf("failed to solve captcha: %v", err)
 	}
-	// logger.GetGlobalLogger().WithComponent("browser").Info("Captcha resolved, proceeding to form submission")
+
+	e.logger.InfoFields("Captcha resolved successfully", logger.Fields{
+		"cnpj":           cnpj,
+		"correlation_id": correlationID,
+		"duration":       time.Since(captchaStart).String(),
+	})
 
 	// Submete formulário
-	// logger.GetGlobalLogger().WithComponent("browser").Debug("Starting form submission")
+	formStart := time.Now()
+	e.logger.DebugFields("Starting form submission", logger.Fields{
+		"cnpj":           cnpj,
+		"correlation_id": correlationID,
+	})
+
 	err = e.submitForm(page)
 	if err != nil {
-		// logger.GetGlobalLogger().WithComponent("browser").WithError(err).Error("Form submission failed")
+		e.logger.ErrorFields("Form submission failed", logger.Fields{
+			"cnpj":           cnpj,
+			"correlation_id": correlationID,
+			"duration":       time.Since(formStart).String(),
+			"error":          err.Error(),
+		})
 		return nil, fmt.Errorf("failed to submit form: %v", err)
 	}
-	// logger.GetGlobalLogger().WithComponent("browser").Info("Form submitted successfully, proceeding to data extraction")
+
+	e.logger.InfoFields("Form submitted successfully", logger.Fields{
+		"cnpj":           cnpj,
+		"correlation_id": correlationID,
+		"duration":       time.Since(formStart).String(),
+	})
 
 	// Extrai dados
-	// logger.GetGlobalLogger().WithComponent("browser").Debug("Starting data extraction")
+	extractStart := time.Now()
+	e.logger.DebugFields("Starting data extraction", logger.Fields{
+		"cnpj":           cnpj,
+		"correlation_id": correlationID,
+	})
+
 	data, err := e.extractData(page)
 	if err != nil {
-		// logger.GetGlobalLogger().WithComponent("browser").WithError(err).Error("Data extraction failed")
+		e.logger.ErrorFields("Data extraction failed", logger.Fields{
+			"cnpj":           cnpj,
+			"correlation_id": correlationID,
+			"duration":       time.Since(extractStart).String(),
+			"error":          err.Error(),
+		})
 		return nil, fmt.Errorf("failed to extract data: %v", err)
 	}
-	// logger.GetGlobalLogger().WithComponent("browser").Info("Data extraction completed successfully")
+
+	e.logger.InfoFields("Data extraction completed successfully", logger.Fields{
+		"cnpj":           cnpj,
+		"correlation_id": correlationID,
+		"duration":       time.Since(extractStart).String(),
+	})
 
 	// Adiciona metadados
+	totalDuration := time.Since(start)
 	data.Metadados.Timestamp = time.Now()
-	data.Metadados.Duracao = time.Since(start).String()
+	data.Metadados.Duracao = totalDuration.String()
 	data.Metadados.URLConsulta = page.MustInfo().URL
 	data.Metadados.Fonte = "online"
 	data.Metadados.Sucesso = true
 
-	// // logger.GetGlobalLogger().WithComponent("browser").DebugFields("Page loaded", logger.Fields{
-	// 		"cnpj":     cnpj,
-	// 		"duration": time.Since(start),
-	// 	}).Info("CNPJ data extracted successfully")
+	e.logger.InfoFields("CNPJ data extraction completed successfully", logger.Fields{
+		"cnpj":           cnpj,
+		"correlation_id": correlationID,
+		"total_duration": totalDuration.String(),
+		"url_consulta":   data.Metadados.URLConsulta,
+		"empresa":        data.Empresa.RazaoSocial,
+	})
 
 	return data, nil
 }
@@ -283,7 +485,7 @@ func (e *CNPJExtractor) configurePagePerformance(page *rod.Page) error {
 }
 
 // injectCaptchaToken injeta token de captcha de forma robusta
-func (e *CNPJExtractor) injectCaptchaToken(page *rod.Page, token string) (map[string]interface{}, error) {
+func (e *CNPJExtractor) injectCaptchaToken(page *rod.Page, token string) (map[string]any, error) {
 	if token == "" {
 		return nil, fmt.Errorf("empty token")
 	}
@@ -370,11 +572,11 @@ func (e *CNPJExtractor) injectCaptchaToken(page *rod.Page, token string) (map[st
 	}
 
 	// res.Value é do tipo gson.JSON do Rod
-	var out map[string]interface{}
+	var out map[string]any
 	err = res.Value.Unmarshal(&out)
 	if err != nil {
 		// fallback: criar estrutura básica
-		out = map[string]interface{}{
+		out = map[string]any{
 			"ok":  false,
 			"err": "failed_to_unmarshal_result",
 			"raw": res.Value.String(),
@@ -386,137 +588,237 @@ func (e *CNPJExtractor) injectCaptchaToken(page *rod.Page, token string) (map[st
 
 // solveCaptcha resolve o captcha na página
 func (e *CNPJExtractor) solveCaptcha(page *rod.Page) (err error) {
+	start := time.Now()
+
 	// Adiciona recovery para capturar panics
 	defer func() {
 		if r := recover(); r != nil {
-			// logger.GetGlobalLogger().WithComponent("browser").Info("Browser action").Error("🚨 PANIC during captcha solving")
+			e.logger.ErrorFields("Panic during captcha solving", logger.Fields{
+				"panic":    r,
+				"duration": time.Since(start).String(),
+			})
 			err = fmt.Errorf("panic during captcha solving: %v", r)
 		}
 	}()
+
+	e.logger.Debug("Looking for captcha element")
+
 	// Aguarda elemento do captcha
 	captchaEl, err := page.Timeout(10 * time.Second).Element("[data-sitekey]")
 	if err != nil {
+		e.logger.ErrorFields("Captcha element not found", logger.Fields{
+			"timeout": "10s",
+			"error":   err.Error(),
+		})
 		return fmt.Errorf("captcha element not found: %v", err)
 	}
 
 	sitekey, err := captchaEl.Attribute("data-sitekey")
 	if err != nil {
+		e.logger.ErrorFields("Failed to get captcha sitekey", logger.Fields{
+			"error": err.Error(),
+		})
 		return fmt.Errorf("failed to get sitekey: %v", err)
 	}
 
 	if sitekey == nil {
+		e.logger.Error("Captcha sitekey is empty")
 		return fmt.Errorf("sitekey is empty")
 	}
 
-	// logger.GetGlobalLogger().WithComponent("browser").DebugFields("Solving captcha", logger.Fields{"sitekey": *sitekey})
+	e.logger.DebugFields("Found captcha, starting resolution", logger.Fields{
+		"sitekey": *sitekey,
+		"url":     page.MustInfo().URL,
+	})
 
 	// Resolve captcha
+	resolveStart := time.Now()
 	token, err := e.captchaClient.SolveHCaptcha(*sitekey, page.MustInfo().URL)
 	if err != nil {
+		e.logger.ErrorFields("Captcha resolution failed", logger.Fields{
+			"sitekey":  *sitekey,
+			"duration": time.Since(resolveStart).String(),
+			"error":    err.Error(),
+		})
 		return fmt.Errorf("captcha resolution failed: %v", err)
 	}
 
-	// 	// logger.GetGlobalLogger().WithComponent("browser").Info("Browser action") > 0).Info("🎯 CAPTCHA TOKEN RECEIVED - Starting injection process")
+	e.logger.InfoFields("Captcha token received", logger.Fields{
+		"sitekey":          *sitekey,
+		"resolve_duration": time.Since(resolveStart).String(),
+		"token_length":     len(token),
+	})
 
-	// Injeta token usando método robusto (sem fmt.Sprintf)
-	// 	// logger.GetGlobalLogger().WithComponent("browser").Info("Browser action")).Info("🔧 STARTING TOKEN INJECTION")
+	// Injeta token usando método robusto
+	e.logger.Debug("Starting token injection")
+	injectStart := time.Now()
 
 	result, err := e.injectCaptchaToken(page, token)
 	if err != nil {
-		// logger.GetGlobalLogger().WithComponent("browser").WithError(err).Error("❌ Token injection failed")
+		e.logger.ErrorFields("Token injection failed", logger.Fields{
+			"error":    err.Error(),
+			"duration": time.Since(injectStart).String(),
+		})
 		return fmt.Errorf("failed to inject captcha token: %v", err)
 	}
 
-	// logger.GetGlobalLogger().WithComponent("browser").InfoFields("📋 Injection result", logger.Fields{"inject_result": result})
+	e.logger.DebugFields("Token injection result", logger.Fields{
+		"result":   result,
+		"duration": time.Since(injectStart).String(),
+	})
 
 	if ok, _ := result["ok"].(bool); !ok {
 		errMsg, _ := result["err"].(string)
-		// logger.GetGlobalLogger().WithComponent("browser").Info("Browser action").Error("❌ Captcha injection failed")
+		e.logger.ErrorFields("Captcha injection failed", logger.Fields{
+			"error_msg": errMsg,
+			"result":    result,
+		})
 		return fmt.Errorf("captcha injection failed: %s", errMsg)
 	}
 
-	// logger.GetGlobalLogger().WithComponent("browser").Info("✅ Token injected successfully")
+	e.logger.Info("Token injected successfully")
 
-	// Token injection já foi feito acima
-
-	// Aguarda um pouco para garantir que o token foi processado (igual ao Python)
-	// logger.GetGlobalLogger().WithComponent("browser").Info("⏳ Waiting 2 seconds for token processing...")
+	// Aguarda processamento do token
+	e.logger.Debug("Waiting for token processing")
 	time.Sleep(2 * time.Second)
 
-	// logger.GetGlobalLogger().WithComponent("browser").Info("✅ CAPTCHA TOKEN INJECTION COMPLETED SUCCESSFULLY")
+	totalDuration := time.Since(start)
+	e.logger.InfoFields("Captcha resolution completed successfully", logger.Fields{
+		"total_duration":   totalDuration.String(),
+		"resolve_duration": time.Since(resolveStart).String(),
+		"inject_duration":  time.Since(injectStart).String(),
+	})
+
 	return nil
 }
 
 // submitForm submete o formulário de consulta
 func (e *CNPJExtractor) submitForm(page *rod.Page) error {
-	// logger.GetGlobalLogger().WithComponent("browser").Info("🚀 STARTING FORM SUBMISSION")
+	start := time.Now()
+	e.logger.Debug("Starting form submission")
 
 	// Procura botão de consulta
-	// logger.GetGlobalLogger().WithComponent("browser").Info("🔍 Looking for submit button...")
+	e.logger.Debug("Looking for submit button")
 	button, err := page.Timeout(10 * time.Second).Element("button.btn-primary")
 	if err != nil {
-		// logger.GetGlobalLogger().WithComponent("browser").WithError(err).Error("Submit button not found")
+		e.logger.ErrorFields("Submit button not found", logger.Fields{
+			"timeout": "10s",
+			"error":   err.Error(),
+		})
 		return fmt.Errorf("submit button not found: %v", err)
 	}
 
-	// logger.GetGlobalLogger().WithComponent("browser").Debug("Submit button found, clicking...")
+	e.logger.Debug("Submit button found, clicking")
 
 	// Clica no botão
+	clickStart := time.Now()
 	err = button.Click(proto.InputMouseButtonLeft, 1)
 	if err != nil {
-		// logger.GetGlobalLogger().WithComponent("browser").WithError(err).Error("Failed to click submit button")
+		e.logger.ErrorFields("Failed to click submit button", logger.Fields{
+			"error": err.Error(),
+		})
 		return fmt.Errorf("failed to click submit button: %v", err)
 	}
 
-	// logger.GetGlobalLogger().WithComponent("browser").Info("Form submitted successfully, waiting for navigation")
+	e.logger.DebugFields("Form submitted, waiting for navigation", logger.Fields{
+		"click_duration": time.Since(clickStart).String(),
+	})
 
 	// Aguarda navegação para página de resultado
+	navStart := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// logger.GetGlobalLogger().WithComponent("browser").Debug("Waiting for navigation to result page")
+	e.logger.Debug("Waiting for navigation to result page")
 
 	// Tenta aguardar pela URL de comprovante
 	page.Context(ctx).WaitNavigation(proto.PageLifecycleEventNameLoad)()
 
-	_ = page.MustInfo().URL
-	// logger.GetGlobalLogger().WithComponent("browser").DebugFields("Navigation completed", logger.Fields{"current_url": currentURL})
+	currentURL := page.MustInfo().URL
+	e.logger.DebugFields("Navigation completed", logger.Fields{
+		"current_url":         currentURL,
+		"navigation_duration": time.Since(navStart).String(),
+	})
 
 	// Se chegou aqui, verifica se é a página de resultado
-	// logger.GetGlobalLogger().WithComponent("browser").Debug("Looking for result page content")
+	e.logger.Debug("Looking for result page content")
+	verifyStart := time.Now()
 	_, err = page.Timeout(15*time.Second).ElementR("*", "COMPROVANTE DE INSCRIÇÃO")
 	if err != nil {
-		// logger.GetGlobalLogger().WithComponent("browser").WithError(err).Info("Browser action").Error("Result page content not found")
+		e.logger.ErrorFields("Result page content not found", logger.Fields{
+			"error":           err.Error(),
+			"current_url":     currentURL,
+			"verify_duration": time.Since(verifyStart).String(),
+		})
 
 		// Tenta capturar o conteúdo da página para debug
 		if bodyText, textErr := page.Element("body"); textErr == nil {
-			if _, textErr := bodyText.Text(); textErr == nil {
-				// 				// logger.GetGlobalLogger().WithComponent("browser").Info("Browser action"))]).Debug("Current page content")
+			if pageContent, textErr := bodyText.Text(); textErr == nil {
+				previewLength := min(500, len(pageContent))
+				e.logger.DebugFields("Current page content for debugging", logger.Fields{
+					"content_length":  len(pageContent),
+					"content_preview": pageContent[:previewLength],
+				})
 			}
 		}
 
 		return fmt.Errorf("failed to wait for result page: %v", err)
 	}
 
-	// logger.GetGlobalLogger().WithComponent("browser").Info("Result page loaded successfully")
+	totalDuration := time.Since(start)
+	e.logger.InfoFields("Form submission completed successfully", logger.Fields{
+		"total_duration":      totalDuration.String(),
+		"navigation_duration": time.Since(navStart).String(),
+		"verify_duration":     time.Since(verifyStart).String(),
+		"result_url":          currentURL,
+	})
+
 	return nil
 }
 
 // extractData extrai os dados da página de resultado
 func (e *CNPJExtractor) extractData(page *rod.Page) (*types.CNPJData, error) {
+	start := time.Now()
+	e.logger.Debug("Starting data extraction from result page")
+
 	// Obtém todo o texto da página
+	e.logger.Debug("Getting page body element")
 	bodyElement, err := page.Element("body")
 	if err != nil {
+		e.logger.ErrorFields("Failed to find body element", logger.Fields{
+			"error": err.Error(),
+		})
 		return nil, fmt.Errorf("failed to find body element: %v", err)
 	}
 
+	e.logger.Debug("Extracting text from page body")
+	textStart := time.Now()
 	text, err := bodyElement.Text()
 	if err != nil {
+		e.logger.ErrorFields("Failed to get page text", logger.Fields{
+			"error": err.Error(),
+		})
 		return nil, fmt.Errorf("failed to get page text: %v", err)
 	}
 
+	e.logger.DebugFields("Page text extracted", logger.Fields{
+		"text_length":      len(text),
+		"extract_duration": time.Since(textStart).String(),
+	})
+
 	// Usa o mesmo parser do Python (adaptado para Go)
+	e.logger.Debug("Starting text parsing")
+	parseStart := time.Now()
 	data := e.parseTextData(text)
+
+	totalDuration := time.Since(start)
+	e.logger.InfoFields("Data extraction completed", logger.Fields{
+		"total_duration": totalDuration.String(),
+		"parse_duration": time.Since(parseStart).String(),
+		"cnpj":           data.CNPJ.Numero,
+		"empresa":        data.Empresa.RazaoSocial,
+		"situacao":       data.Situacao.Cadastral,
+	})
 
 	return data, nil
 }
