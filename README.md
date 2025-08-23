@@ -1,121 +1,212 @@
-# Consulta CNPJ - Receita Federal
+# 🏢 CNPJ Consultor
 
-Este projeto implementa uma automação para consultar CNPJs no site da Receita Federal, baseado nos passos de gravação fornecidos.
+Sistema de consulta automatizada de CNPJs na Receita Federal com resolução automática de captcha.
 
-## Funcionalidades
+## ✨ Características
 
-- Automação completa da consulta de CNPJ
-- Resolução automática de hCaptcha (quando possível)
-- Extração dos dados do resultado
-- Logging detalhado das operações
-- Suporte a modo headless
+- 🚀 **Alta Performance**: Pool de workers com browsers otimizados
+- 🤖 **Captcha Automático**: Resolução via SolveCaptcha.com
+- 🔄 **Busca Direta**: Sempre consulta dados atualizados da Receita Federal
+- 📊 **API REST**: Interface simples e documentada
+- 🛡️ **Rate Limiting**: Controle de requisições
+- 📈 **Monitoramento**: Estatísticas em tempo real
 
-## Requisitos
+## 🚀 Início Rápido
 
-- Python 3.7+
-- Chrome/Chromium instalado
-- Dependências listadas em `requirements.txt`
+### Pré-requisitos
 
-## Instalação
+- Go 1.21+
+- Chave API do SolveCaptcha.com
 
-1. Clone ou baixe este projeto
-2. Instale as dependências:
-
-```bash
-pip install -r requirements.txt
-```
-
-## Uso
-
-### Uso Básico
-
-```python
-from cnpj_consulta import CNPJConsulta
-
-# Cria uma instância do consultor
-consultor = CNPJConsulta(headless=False)
-
-try:
-    # Consulta um CNPJ
-    resultado = consultor.consultar_cnpj("38139407000177")
-    
-    if resultado:
-        print("Consulta realizada com sucesso!")
-        print(f"URL: {resultado['url_resultado']}")
-    else:
-        print("Falha na consulta")
-        
-finally:
-    consultor.fechar()
-```
-
-### Executar o exemplo
+### Instalação
 
 ```bash
-python cnpj_consulta.py
+# Clone o repositório
+git clone <repo-url>
+cd nexconsult
+
+# Configure as variáveis de ambiente
+export SOLVECAPTCHA_API_KEY="sua-chave-aqui"
+
+# Compile e execute
+go build -o cnpj-consultor .
+./cnpj-consultor
 ```
 
-## Estrutura do Projeto
+### Uso da API
 
-```
-.
-├── cnpj_consulta.py    # Classe principal para consulta
-├── requirements.txt    # Dependências do projeto
-└── README.md          # Este arquivo
-```
+```bash
+# Consultar CNPJ
+curl "http://localhost:3000/api/v1/cnpj/38139407000177"
 
-## Como Funciona
-
-O script segue os passos da gravação fornecida:
-
-1. **Configuração do navegador**: Define viewport de 1100x633px
-2. **Navegação**: Acessa a URL da Receita Federal com o CNPJ
-3. **Resolução de Captcha**: Tenta resolver o hCaptcha automaticamente
-4. **Consulta**: Clica no botão "CONSULTAR"
-5. **Extração**: Coleta os dados da página de resultado
-
-## Limitações e Considerações
-
-- **hCaptcha**: A resolução automática pode não funcionar sempre. Em casos reais, pode ser necessária intervenção manual
-- **Rate Limiting**: O site da Receita Federal pode ter limitações de taxa
-- **Mudanças no Site**: Se o site mudar sua estrutura, o script pode precisar de ajustes
-- **Uso Responsável**: Use com moderação e respeite os termos de uso do site
-
-## Personalização
-
-### Modo Headless
-
-Para executar sem interface gráfica:
-
-```python
-consultor = CNPJConsulta(headless=True)
+# Verificar status do sistema
+curl "http://localhost:3000/api/v1/status"
 ```
 
-### Extração de Dados Específicos
+## 📁 Estrutura do Projeto
 
-Você pode modificar o método `_extrair_dados_resultado()` para extrair campos específicos como:
-- Razão social
-- Nome fantasia
-- Situação cadastral
-- Data de abertura
-- Endereço
-- Atividade principal
+```
+nexconsult/
+├── main.go           # Aplicação principal
+├── browser.go        # Gerenciamento de browsers e extração
+├── worker.go         # Pool de workers
+├── captcha.go        # Cliente SolveCaptcha
+├── config.go         # Configurações
+├── types.go          # Tipos e estruturas
+├── legacy/           # Código Python (referência)
+│   ├── main.py
+│   ├── cnpj_consultor_v2.py
+│   └── requirements.txt
+└── docs/             # Documentação
+```
 
-## Troubleshooting
+## ⚙️ Configuração
 
-### Chrome não encontrado
-Certifique-se de que o Chrome está instalado no sistema.
+### Variáveis de Ambiente
 
-### Timeout errors
-Aumente os tempos de espera se a conexão estiver lenta.
+| Variável | Padrão | Descrição |
+|----------|--------|-----------|
+| `PORT` | 3000 | Porta do servidor |
+| `WORKERS_COUNT` | 5 | Número de workers |
+| `SOLVECAPTCHA_API_KEY` | - | Chave da API SolveCaptcha |
+| `LOG_LEVEL` | info | Nível de log (debug, info, warn, error) |
+| `RATE_LIMIT_RPM` | 100 | Requisições por minuto |
 
-### Captcha não resolvido
-Em alguns casos, pode ser necessário resolver o captcha manualmente.
+### Configuração Avançada
 
-## Contribuição
+```bash
+# Browser
+export BROWSER_PAGE_TIMEOUT=30
+export BROWSER_NAV_TIMEOUT=30
+export BROWSER_ELEMENT_TIMEOUT=15
 
-Sinta-se à vontade para contribuir com melhorias, correções de bugs ou novas funcionalidades.
+# Workers
+export MAX_CONCURRENT=10
+export WORKER_TIMEOUT=300
 
-## Aviso Legal
+# Captcha
+export CAPTCHA_TIMEOUT=300
+export CAPTCHA_MAX_RETRIES=3
+```
 
-Este projeto é apenas para fins educacionais e de automação pessoal. Certifique-se de respeitar os termos de uso do site da Receita Federal e use com responsabilidade.
+## 📊 API Reference
+
+### GET /api/v1/cnpj/{cnpj}
+
+Consulta dados de um CNPJ.
+
+**Parâmetros:**
+- `cnpj`: CNPJ com ou sem formatação
+
+**Resposta:**
+```json
+{
+  "cnpj": "38.139.407/0001-77",
+  "razao_social": "FERRAZ AUTO CENTER LTDA",
+  "situacao": "ATIVA",
+  "data_situacao": "18/08/2020",
+  "endereco": {
+    "logradouro": "R GUANABARA",
+    "numero": "377",
+    "cidade": "IMPERATRIZ",
+    "uf": "MA",
+    "cep": "65903-270"
+  },
+  "atividades": [...],
+  "comprovante": {
+    "emitido_em": "23/08/2025 às 10:45:56"
+  }
+}
+```
+
+### GET /api/v1/status
+
+Retorna estatísticas do sistema.
+
+**Resposta:**
+```json
+{
+  "jobs": {
+    "pending": 0,
+    "processing": 0,
+    "completed": 15
+  },
+  "workers": {
+    "total": 5,
+    "active": 2
+  },
+  "system": {
+    "uptime": "2h30m15s",
+    "version": "1.0.0"
+  }
+}
+```
+
+## 🔧 Desenvolvimento
+
+### Compilação
+
+```bash
+go build -o cnpj-consultor .
+```
+
+### Testes
+
+```bash
+go test ./...
+```
+
+### Logs
+
+```bash
+# Debug detalhado
+export LOG_LEVEL=debug
+./cnpj-consultor
+
+# Apenas erros
+export LOG_LEVEL=error
+./cnpj-consultor
+```
+
+## 📈 Performance
+
+- **Primeira consulta**: ~30-40s (inclui resolução de captcha)
+- **Throughput**: ~100 consultas/hora (limitado pelo captcha)
+- **Concorrência**: 5 workers simultâneos
+- **Memória**: ~50MB por worker
+
+## 🛠️ Arquitetura
+
+### Componentes
+
+1. **API Server**: Fiber HTTP server
+2. **Worker Pool**: Gerencia workers concorrentes
+3. **Browser Manager**: Pool de browsers Chrome/Chromium
+4. **Captcha Client**: Interface com SolveCaptcha.com
+5. **CNPJ Extractor**: Extração de dados da Receita Federal
+
+### Fluxo de Processamento
+
+1. Requisição HTTP recebida
+2. Job criado e enviado para worker pool
+3. Worker obtém browser do pool
+4. Navega para site da Receita Federal
+5. Resolve captcha automaticamente
+6. Submete formulário e extrai dados
+7. Retorna dados estruturados
+
+## 📝 Licença
+
+MIT License - veja LICENSE para detalhes.
+
+## 🤝 Contribuição
+
+1. Fork o projeto
+2. Crie uma branch para sua feature
+3. Commit suas mudanças
+4. Push para a branch
+5. Abra um Pull Request
+
+## 📞 Suporte
+
+Para dúvidas ou problemas, abra uma issue no GitHub.
