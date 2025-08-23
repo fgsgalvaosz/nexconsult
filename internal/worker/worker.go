@@ -57,7 +57,7 @@ func NewWorkerPool(workerCount int, captchaClient *captcha.SolveCaptchaClient) *
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Cria browser manager otimizado para busca direta
-	browserMgr := browser.NewBrowserManager(workerCount, true) // headless = true
+	browserMgr := browser.NewBrowserManager(workerCount, false) // headless = false para visualizar
 
 	pool := &WorkerPool{
 		workers:       make([]*Worker, workerCount),

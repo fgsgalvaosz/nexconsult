@@ -215,6 +215,9 @@ type SolveCaptchaConfig struct {
 // RateLimitConfig contém configurações de rate limiting
 type RateLimitConfig struct {
 	RequestsPerMinute int `mapstructure:"requests_per_minute"`
+	BurstSize         int `mapstructure:"burst_size"`
+	MaxQueueSize      int `mapstructure:"max_queue_size"`
+	CleanupInterval   int `mapstructure:"cleanup_interval_minutes"`
 }
 
 // BrowserConfig contém configurações do browser

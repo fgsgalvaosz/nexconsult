@@ -69,7 +69,7 @@ func main() {
 	})
 
 	// Configura rotas da API
-	api.SetupRoutes(app, workerPool)
+	api.SetupRoutes(app, workerPool, cfg)
 
 	// Graceful shutdown
 	c := make(chan os.Signal, 1)

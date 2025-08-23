@@ -29,7 +29,10 @@ func LoadConfig() *types.Config {
 			MaxRetries:     getEnvInt("CAPTCHA_MAX_RETRIES", 3),
 		},
 		RateLimit: types.RateLimitConfig{
-			RequestsPerMinute: getEnvInt("RATE_LIMIT_RPM", 100),
+			RequestsPerMinute: getEnvInt("RATE_LIMIT_RPM", 10),       // 10 req/min por IP (mais conservador)
+			BurstSize:         getEnvInt("RATE_LIMIT_BURST", 2),      // 2 requisições em burst
+			MaxQueueSize:      getEnvInt("MAX_QUEUE_SIZE", 1000),     // 1000 jobs na fila
+			CleanupInterval:   getEnvInt("RATE_CLEANUP_INTERVAL", 5), // Limpeza a cada 5 min
 		},
 		Browser: types.BrowserConfig{
 			PageTimeoutSeconds:       getEnvInt("BROWSER_PAGE_TIMEOUT", 30),
