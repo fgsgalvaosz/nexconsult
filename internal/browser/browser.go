@@ -277,9 +277,10 @@ func (bm *BrowserManager) createBrowser() (*rod.Browser, error) {
 
 // CNPJExtractor extrai dados de CNPJ da página da Receita Federal
 type CNPJExtractor struct {
-	captchaClient *captcha.SolveCaptchaClient
-	browserMgr    *BrowserManager
-	logger        logger.Logger
+	captchaClient    *captcha.SolveCaptchaClient
+	browserMgr       *BrowserManager
+	logger           logger.Logger
+	lastCaptchaToken string // Armazena o último token para re-injeção
 }
 
 // NewCNPJExtractor cria um novo extrator
@@ -301,15 +302,42 @@ func (e *CNPJExtractor) ExtractCNPJData(cnpj string) (*types.CNPJData, error) {
 		"correlation_id": correlationID,
 	})
 
-	browser := e.browserMgr.GetBrowser()
-	if browser == nil {
-		e.logger.ErrorFields("No browser available for CNPJ extraction", logger.Fields{
+	// Configura página
+	page, err := e.setupPage(cnpj, correlationID)
+	if err != nil {
+		return nil, err
+	}
+	defer page.Close()
+
+	// Resolve captcha
+	if err := e.solveCaptcha(page); err != nil {
+		e.logger.ErrorFields("Captcha resolution failed", logger.Fields{
 			"cnpj":           cnpj,
 			"correlation_id": correlationID,
+			"error":          err.Error(),
 		})
-		return nil, fmt.Errorf("no browser available")
+		return nil, fmt.Errorf("failed to solve captcha: %v", err)
 	}
-	defer e.browserMgr.ReleaseBrowser(browser) // Libera browser após uso
+
+	// Submete formulário com retry
+	if err := e.submitFormWithRetry(page, cnpj, correlationID); err != nil {
+		return nil, err
+	}
+
+	// Extrai dados
+	data, err := e.extractData(page)
+	if err != nil {
+		e.logger.ErrorFields("Data extraction failed", logger.Fields{
+			"cnpj":           cnpj,
+			"correlation_id": correlationID,
+			"error":          err.Error(),
+		})
+		return nil, fmt.Errorf("failed to extract data: %v", err)
+	}
+
+	// Finaliza
+	return e.finalizeCNPJData(data, page, cnpj, correlationID, start)
+}
 
 	// Cria nova página isolada com timeout otimizado
 	page, err := browser.Page(proto.TargetCreateTarget{})
@@ -321,6 +349,20 @@ func (e *CNPJExtractor) ExtractCNPJData(cnpj string) (*types.CNPJData, error) {
 		})
 		return nil, fmt.Errorf("failed to create page: %v", err)
 	}
+
+	// Habilitar captura de requisições de rede
+	e.logger.Debug("Enabling network monitoring")
+	page.EnableDomain(proto.NetworkEnable{})
+
+	// Habilitar captura de logs do console
+	e.logger.Debug("Enabling console monitoring")
+	page.EnableDomain(proto.RuntimeEnable{})
+
+	// Configurar listeners para requisições de rede
+	go e.monitorNetworkRequests(page, cnpj, correlationID)
+
+	// Configurar listeners para console
+	go e.monitorConsole(page, cnpj, correlationID)
 	defer page.Close()
 
 	// Configura página para performance
@@ -333,21 +375,26 @@ func (e *CNPJExtractor) ExtractCNPJData(cnpj string) (*types.CNPJData, error) {
 		return nil, fmt.Errorf("failed to configure page: %v", err)
 	}
 
-	// Navega para página de consulta
-	url := fmt.Sprintf("https://solucoes.receita.fazenda.gov.br/servicos/cnpjreva/Cnpjreva_Solicitacao.asp?cnpj=%s", cnpj)
-
-	e.logger.DebugFields("Navigating to CNPJ consultation page", logger.Fields{
+	// Navega diretamente para página de consulta com CNPJ (seguindo padrão Puppeteer)
+	e.logger.DebugFields("Preparing direct navigation to CNPJ consultation page", logger.Fields{
 		"cnpj":           cnpj,
 		"correlation_id": correlationID,
-		"url":            url,
 	})
 
-	err = page.Navigate(url)
+	// Navegar diretamente para a página com CNPJ (como no Puppeteer)
+	directURL := fmt.Sprintf("https://solucoes.receita.fazenda.gov.br/servicos/cnpjreva/Cnpjreva_Solicitacao.asp?cnpj=%s", cnpj)
+	e.logger.DebugFields("Navigating directly to CNPJ consultation page", logger.Fields{
+		"cnpj":           cnpj,
+		"correlation_id": correlationID,
+		"direct_url":     directURL,
+	})
+
+	err = page.Navigate(directURL)
 	if err != nil {
 		e.logger.ErrorFields("Failed to navigate to consultation page", logger.Fields{
 			"cnpj":           cnpj,
 			"correlation_id": correlationID,
-			"url":            url,
+			"direct_url":     directURL,
 			"error":          err.Error(),
 		})
 		return nil, fmt.Errorf("failed to navigate: %v", err)
@@ -358,7 +405,7 @@ func (e *CNPJExtractor) ExtractCNPJData(cnpj string) (*types.CNPJData, error) {
 		e.logger.ErrorFields("Failed to wait for page load", logger.Fields{
 			"cnpj":           cnpj,
 			"correlation_id": correlationID,
-			"url":            url,
+			"direct_url":     directURL,
 			"error":          err.Error(),
 		})
 		return nil, fmt.Errorf("failed to wait for page load: %v", err)
@@ -502,9 +549,11 @@ func (e *CNPJExtractor) ExtractCNPJData(cnpj string) (*types.CNPJData, error) {
 					e.logger.Info("Browser and page restarted, navigating to CNPJ page")
 
 					// Navega novamente para a página
-					if navErr := page.Navigate(url); navErr != nil {
+					restartURL := fmt.Sprintf("https://solucoes.receita.fazenda.gov.br/servicos/cnpjreva/Cnpjreva_Solicitacao.asp?cnpj=%s", cnpj)
+					if navErr := page.Navigate(restartURL); navErr != nil {
 						e.logger.ErrorFields("Failed to navigate after browser restart", logger.Fields{
-							"error": navErr.Error(),
+							"restart_url": restartURL,
+							"error":       navErr.Error(),
 						})
 						formErr = navErr
 						break
@@ -609,6 +658,128 @@ func (e *CNPJExtractor) ExtractCNPJData(cnpj string) (*types.CNPJData, error) {
 		"total_duration": totalDuration.String(),
 		"url_consulta":   data.Metadados.URLConsulta,
 		"empresa":        data.Empresa.RazaoSocial,
+		"method":         "puppeteer-pattern",
+	})
+
+	return data, nil
+}
+
+// setupPage configura e navega para a página do CNPJ
+func (e *CNPJExtractor) setupPage(cnpj, correlationID string) (*rod.Page, error) {
+	browser := e.browserMgr.GetBrowser()
+	if browser == nil {
+		return nil, fmt.Errorf("no browser available")
+	}
+	defer e.browserMgr.ReleaseBrowser(browser)
+
+	page, err := browser.Page(proto.TargetCreateTarget{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create page: %v", err)
+	}
+
+	page.EnableDomain(proto.NetworkEnable{})
+	page.EnableDomain(proto.RuntimeEnable{})
+
+	go e.monitorNetworkRequests(page, cnpj, correlationID)
+	go e.monitorConsole(page, cnpj, correlationID)
+
+	if err := e.configurePagePerformance(page); err != nil {
+		page.Close()
+		return nil, fmt.Errorf("failed to configure page: %v", err)
+	}
+
+	url := fmt.Sprintf("https://solucoes.receita.fazenda.gov.br/servicos/cnpjreva/Cnpjreva_Solicitacao.asp?cnpj=%s", cnpj)
+	if err := page.Navigate(url); err != nil {
+		page.Close()
+		return nil, fmt.Errorf("failed to navigate: %v", err)
+	}
+
+	if err := page.WaitLoad(); err != nil {
+		page.Close()
+		return nil, fmt.Errorf("failed to wait for load: %v", err)
+	}
+
+	return page, nil
+}
+
+// submitFormWithRetry submete formulário com retry automático
+func (e *CNPJExtractor) submitFormWithRetry(page *rod.Page, cnpj, correlationID string) error {
+	maxRetries := 3
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		e.logger.DebugFields("Form submission attempt", logger.Fields{
+			"attempt":        attempt,
+			"max_retries":    maxRetries,
+			"cnpj":           cnpj,
+			"correlation_id": correlationID,
+		})
+
+		if err := e.submitForm(page, cnpj); err != nil {
+			if attempt == maxRetries {
+				return fmt.Errorf("form submission failed after %d attempts: %v", maxRetries, err)
+			}
+
+			e.logger.WarnFields("Form submission failed, retrying", logger.Fields{
+				"error":          err.Error(),
+				"attempt":        attempt,
+				"cnpj":           cnpj,
+				"correlation_id": correlationID,
+				"error_type":     "form_validation",
+			})
+
+			// Restart browser para limpar estado
+			newBrowser := e.restartBrowser()
+			if newBrowser == nil {
+				return fmt.Errorf("failed to restart browser")
+			}
+
+			// Cria nova página
+			newPage, err := newBrowser.Page(proto.TargetCreateTarget{})
+			if err != nil {
+				return fmt.Errorf("failed to create new page: %v", err)
+			}
+
+			page.Close()
+			page = newPage
+
+			// Navega novamente
+			url := fmt.Sprintf("https://solucoes.receita.fazenda.gov.br/servicos/cnpjreva/Cnpjreva_Solicitacao.asp?cnpj=%s", cnpj)
+			if err := page.Navigate(url); err != nil {
+				return fmt.Errorf("failed to navigate after restart: %v", err)
+			}
+			if err := page.WaitLoad(); err != nil {
+				return fmt.Errorf("failed to wait for load after restart: %v", err)
+			}
+
+			// Resolve captcha novamente
+			if err := e.solveCaptcha(page); err != nil {
+				return fmt.Errorf("failed to solve captcha after restart: %v", err)
+			}
+			continue
+		}
+
+		// Sucesso
+		return nil
+	}
+
+	return fmt.Errorf("unexpected end of retry loop")
+}
+
+// finalizeCNPJData finaliza os dados extraídos
+func (e *CNPJExtractor) finalizeCNPJData(data *types.CNPJData, page *rod.Page, cnpj, correlationID string, start time.Time) (*types.CNPJData, error) {
+	totalDuration := time.Since(start)
+	data.Metadados.Timestamp = time.Now()
+	data.Metadados.Duracao = totalDuration.String()
+	data.Metadados.URLConsulta = page.MustInfo().URL
+	data.Metadados.Fonte = "online"
+	data.Metadados.Sucesso = true
+
+	e.logger.InfoFields("CNPJ data extraction completed successfully", logger.Fields{
+		"cnpj":           cnpj,
+		"correlation_id": correlationID,
+		"total_duration": totalDuration.String(),
+		"url_consulta":   data.Metadados.URLConsulta,
+		"empresa":        data.Empresa.RazaoSocial,
+		"method":         "puppeteer-pattern",
 	})
 
 	return data, nil
@@ -652,17 +823,21 @@ func (e *CNPJExtractor) injectCaptchaToken(page *rod.Page, token string) (map[st
 		function setAndFire(el) {
 			if (!el) return false;
 			try {
+				console.log('Setting token on element:', el.id || el.name, 'Current value:', el.value);
 				el.value = token;
 				el.dispatchEvent(new Event('input', { bubbles: true }));
 				el.dispatchEvent(new Event('change', { bubbles: true }));
 				el.dispatchEvent(new Event('blur', { bubbles: true }));
+				console.log('Token set successfully. New value length:', el.value.length);
 				return true;
 			} catch (e) {
+				console.error('Error setting token:', e);
 				return false;
 			}
 		}
 
 		const selectors = [
+			'textarea[id^="h-captcha-response"]',
 			'textarea[name="h-captcha-response"]',
 			'textarea[name="g-recaptcha-response"]',
 			'textarea[id^="g-recaptcha-response"]',
@@ -805,6 +980,9 @@ func (e *CNPJExtractor) solveCaptcha(page *rod.Page) (err error) {
 		"token_length":     len(token),
 	})
 
+	// Armazena o token para possível re-injeção
+	e.lastCaptchaToken = token
+
 	// Injeta token com retry automático
 	e.logger.Debug("Starting token injection with retry")
 	injectStart := time.Now()
@@ -938,6 +1116,14 @@ func (e *CNPJExtractor) submitForm(page *rod.Page, cnpj string) error {
 		return fmt.Errorf("captcha token invalid: %v", err)
 	}
 
+	// NOVO: Detectar e limpar estados de erro pré-existentes
+	e.logger.Debug("Checking for pre-existing error states")
+	if err := e.clearPreExistingErrors(page); err != nil {
+		e.logger.WarnFields("Failed to clear pre-existing errors", logger.Fields{
+			"error": err.Error(),
+		})
+	}
+
 	// Verifica novamente se o formulário ainda está válido
 	e.logger.Debug("Final form validation before submission")
 	if err := e.validateForm(page, cnpj); err != nil {
@@ -947,6 +1133,10 @@ func (e *CNPJExtractor) submitForm(page *rod.Page, cnpj string) error {
 		})
 		return fmt.Errorf("final form validation failed: %v", err)
 	}
+
+	// NOVO: Salva HTML antes da submissão (com token aplicado)
+	e.logger.Debug("Saving HTML before form submission for debug")
+	e.saveDebugInfo(page, "before_submission", cnpj)
 
 	// Procura botão de consulta
 	e.logger.Debug("Looking for submit button")
@@ -962,9 +1152,65 @@ func (e *CNPJExtractor) submitForm(page *rod.Page, cnpj string) error {
 		return fmt.Errorf("submit button not found: %v", err)
 	}
 
-	e.logger.Debug("Submit button found, clicking")
+	e.logger.Info("Submit button found, re-injecting token before click")
 
-	// Clica no botão
+	// CRÍTICO: Re-injetar token imediatamente antes do clique
+	// (hCaptcha pode ter regenerado o widget)
+	e.logger.InfoFields("Re-injecting token before submission", logger.Fields{
+		"token_length": len(e.lastCaptchaToken),
+		"token_empty":  e.lastCaptchaToken == "",
+	})
+
+	if e.lastCaptchaToken == "" {
+		e.logger.Error("Cannot re-inject: lastCaptchaToken is empty")
+		return fmt.Errorf("lastCaptchaToken is empty")
+	}
+
+	if _, err := e.injectCaptchaToken(page, e.lastCaptchaToken); err != nil {
+		e.logger.ErrorFields("Failed to re-inject token before submission", logger.Fields{
+			"error": err.Error(),
+		})
+		return fmt.Errorf("failed to re-inject token: %v", err)
+	}
+
+	// Proteção simples: apenas salva token para re-injeção
+	e.logger.Debug("Saving token for potential re-injection")
+	_, err = page.Eval(`() => {
+		const currentToken = document.querySelector('textarea[id^="h-captcha-response"]');
+		if (currentToken && currentToken.value) {
+			window._tokenBackup = currentToken.value;
+			console.log('Token saved for re-injection, length:', currentToken.value.length);
+			return true;
+		}
+		return false;
+	}`)
+	if err != nil {
+		e.logger.WarnFields("Failed to freeze hCaptcha", logger.Fields{
+			"error": err.Error(),
+		})
+	}
+
+	e.logger.Info("Token re-injected successfully, clicking submit button (Puppeteer-style)")
+
+	// Verificação final: confirma que o token ainda está presente
+	finalCheck, err := page.Eval(`() => {
+		const textarea = document.querySelector('textarea[id^="h-captcha-response"]');
+		return {
+			present: textarea !== null,
+			length: textarea ? textarea.value.length : 0,
+			id: textarea ? textarea.id : 'none'
+		};
+	}`)
+	if err == nil {
+		checkData := finalCheck.Value.Map()
+		e.logger.InfoFields("Final token check before click", logger.Fields{
+			"token_present": checkData["present"].Bool(),
+			"token_length":  checkData["length"].Int(),
+			"element_id":    checkData["id"].Str(),
+		})
+	}
+
+	// Clica no botão e aguarda navegação (como no Puppeteer)
 	clickStart := time.Now()
 	err = button.Click(proto.InputMouseButtonLeft, 1)
 	if err != nil {
@@ -974,7 +1220,40 @@ func (e *CNPJExtractor) submitForm(page *rod.Page, cnpj string) error {
 		return fmt.Errorf("failed to click submit button: %v", err)
 	}
 
-	e.logger.DebugFields("Form submitted, waiting for navigation", logger.Fields{
+	// CRÍTICO: Verificação imediata pós-clique para detectar regeneração
+	time.Sleep(100 * time.Millisecond) // Pequeno delay para permitir regeneração
+	postClickCheck, err := page.Eval(`() => {
+		const textarea = document.querySelector('textarea[id^="h-captcha-response"]');
+		return {
+			present: textarea !== null,
+			length: textarea ? textarea.value.length : 0,
+			id: textarea ? textarea.id : 'none',
+			timestamp: Date.now()
+		};
+	}`)
+	if err == nil {
+		checkData := postClickCheck.Value.Map()
+		e.logger.InfoFields("Post-click token verification", logger.Fields{
+			"token_present":  checkData["present"].Bool(),
+			"token_length":   checkData["length"].Int(),
+			"element_id":     checkData["id"].Str(),
+			"ms_after_click": time.Since(clickStart).Milliseconds(),
+		})
+
+		// Se o token foi limpo, tenta re-injeção simples
+		if checkData["length"].Int() == 0 && e.lastCaptchaToken != "" {
+			e.logger.Warn("Token cleared after click, attempting re-injection")
+			if _, reInjectErr := e.injectCaptchaToken(page, e.lastCaptchaToken); reInjectErr != nil {
+				e.logger.ErrorFields("Re-injection failed", logger.Fields{
+					"error": reInjectErr.Error(),
+				})
+			} else {
+				e.logger.Info("Re-injection successful")
+			}
+		}
+	}
+
+	e.logger.DebugFields("Form submitted, waiting for navigation (Puppeteer pattern)", logger.Fields{
 		"click_duration": time.Since(clickStart).String(),
 	})
 
@@ -1003,9 +1282,15 @@ func (e *CNPJExtractor) submitForm(page *rod.Page, cnpj string) error {
 		if pageText, textErr := errorElement.Text(); textErr == nil {
 			// Verifica tipos específicos de erro da Receita Federal
 			if strings.Contains(pageText, "Erro na Consulta") || strings.Contains(pageText, "Campos não preenchidos") {
+				// Verifica estado do token no momento do erro
+				tokenInfo := e.getTokenDebugInfo(page)
+
 				e.logger.ErrorFields("Form submission error detected", logger.Fields{
-					"current_url": currentURL,
-					"error_type":  "form_validation_error",
+					"current_url":    currentURL,
+					"error_type":     "form_validation_error",
+					"token_present":  tokenInfo["token_present"],
+					"token_length":   tokenInfo["token_length"],
+					"token_selector": tokenInfo["token_selector"],
 				})
 
 				// Salvar debug info específico para erro de formulário
@@ -1178,6 +1463,7 @@ func (e *CNPJExtractor) validateCNPJField(page *rod.Page, expectedCNPJ string) e
 // validateCaptchaToken verifica se o token hCaptcha foi aplicado corretamente
 func (e *CNPJExtractor) validateCaptchaToken(page *rod.Page) error {
 	selectors := []string{
+		"textarea[id^='h-captcha-response']",
 		"textarea[name='h-captcha-response']",
 		"textarea[name='g-recaptcha-response']",
 		"textarea[id^='g-recaptcha-response']",
@@ -1332,8 +1618,17 @@ func (e *CNPJExtractor) waitForFormReady(page *rod.Page, cnpj string) error {
 
 		// 3. Verifica se há token de captcha
 		hasToken, err := page.Eval(`() => {
-			const textarea = document.querySelector('textarea[name="h-captcha-response"]');
-			return textarea && textarea.value && textarea.value.length > 50;
+			const selectors = [
+				'textarea[id^="h-captcha-response"]',
+				'textarea[name="h-captcha-response"]'
+			];
+			for (const selector of selectors) {
+				const textarea = document.querySelector(selector);
+				if (textarea && textarea.value && textarea.value.length > 50) {
+					return true;
+				}
+			}
+			return false;
 		}`)
 		if err != nil || !hasToken.Value.Bool() {
 			e.logger.WarnFields("Captcha token not ready", logger.Fields{
@@ -1395,6 +1690,9 @@ func (e *CNPJExtractor) restartBrowser() *rod.Browser {
 func (e *CNPJExtractor) saveDebugInfo(page *rod.Page, errorType string, cnpj string) {
 	timestamp := time.Now().Format("20060102_150405")
 
+	// Obter informações do token para incluir nos logs
+	tokenInfo := e.getTokenDebugInfo(page)
+
 	// Screenshot
 	screenshotPath := fmt.Sprintf("debug_%s_%s_%s.png", errorType, cnpj, timestamp)
 	screenshotData, err := page.Screenshot(true, &proto.PageCaptureScreenshot{
@@ -1432,6 +1730,11 @@ func (e *CNPJExtractor) saveDebugInfo(page *rod.Page, errorType string, cnpj str
 		"screenshot_path": screenshotPath,
 		"html_path":       htmlPath,
 		"timestamp":       timestamp,
+		"token_present":   tokenInfo["token_present"],
+		"token_length":    tokenInfo["token_length"],
+		"token_selector":  tokenInfo["token_selector"],
+		"element_id":      tokenInfo["element_id"],
+		"element_name":    tokenInfo["element_name"],
 	})
 }
 
@@ -1612,4 +1915,214 @@ func (e *CNPJExtractor) processTextLines(cleanLines []string, fieldMap map[strin
 			}
 		}
 	}
+}
+
+// clearPreExistingErrors detecta e limpa estados de erro pré-existentes
+func (e *CNPJExtractor) clearPreExistingErrors(page *rod.Page) error {
+	e.logger.Debug("Checking for pre-existing error states")
+
+	// Verifica se há erros visíveis na página
+	errorCheck, err := page.Eval(`() => {
+		const errors = [];
+
+		// Verifica msgErroCaptcha (erro específico que causa falhas)
+		const captchaError = document.querySelector('#msgErroCaptcha');
+		if (captchaError && !captchaError.classList.contains('collapse')) {
+			errors.push({
+				id: 'msgErroCaptcha',
+				visible: true,
+				text: captchaError.textContent.trim()
+			});
+		}
+
+		// Verifica outros erros visíveis
+		const generalError = document.querySelector('#msgErro');
+		if (generalError && !generalError.classList.contains('collapse')) {
+			errors.push({
+				id: 'msgErro',
+				visible: true,
+				text: generalError.textContent.trim()
+			});
+		}
+
+		return {
+			hasErrors: errors.length > 0,
+			errors: errors
+		};
+	}`)
+
+	if err != nil {
+		return fmt.Errorf("failed to check for errors: %v", err)
+	}
+
+	errorData := errorCheck.Value.Map()
+	hasErrors := errorData["hasErrors"].Bool()
+
+	if hasErrors {
+		e.logger.WarnFields("Pre-existing errors detected", logger.Fields{
+			"errors": errorData["errors"].String(),
+		})
+
+		// Tenta limpar os erros
+		_, clearErr := page.Eval(`() => {
+			// Esconde msgErroCaptcha
+			const captchaError = document.querySelector('#msgErroCaptcha');
+			if (captchaError) {
+				captchaError.classList.add('collapse');
+				captchaError.style.display = 'none';
+			}
+
+			// Esconde msgErro
+			const generalError = document.querySelector('#msgErro');
+			if (generalError) {
+				generalError.classList.add('collapse');
+				generalError.style.display = 'none';
+			}
+
+			return true;
+		}`)
+
+		if clearErr != nil {
+			return fmt.Errorf("failed to clear errors: %v", clearErr)
+		}
+
+		e.logger.Info("Pre-existing errors cleared successfully")
+	}
+
+	return nil
+}
+
+// monitorNetworkRequests monitora requisições de rede
+func (e *CNPJExtractor) monitorNetworkRequests(page *rod.Page, cnpj, correlationID string) {
+	page.EachEvent(func(e *proto.NetworkRequestWillBeSent) {
+		if e.Request.URL != "" {
+			logger.GetGlobalLogger().WithComponent("network").DebugFields("Network request", logger.Fields{
+				"cnpj":           cnpj,
+				"correlation_id": correlationID,
+				"method":         e.Request.Method,
+				"url":            e.Request.URL,
+				"request_id":     string(e.RequestID),
+			})
+		}
+	})()
+
+	page.EachEvent(func(e *proto.NetworkResponseReceived) {
+		if e.Response.URL != "" {
+			logger.GetGlobalLogger().WithComponent("network").DebugFields("Network response", logger.Fields{
+				"cnpj":           cnpj,
+				"correlation_id": correlationID,
+				"status":         e.Response.Status,
+				"url":            e.Response.URL,
+				"request_id":     string(e.RequestID),
+				"mime_type":      e.Response.MIMEType,
+			})
+		}
+	})()
+
+	page.EachEvent(func(e *proto.NetworkLoadingFailed) {
+		logger.GetGlobalLogger().WithComponent("network").WarnFields("Network request failed", logger.Fields{
+			"cnpj":           cnpj,
+			"correlation_id": correlationID,
+			"request_id":     string(e.RequestID),
+			"error_text":     e.ErrorText,
+			"type":           string(e.Type),
+		})
+	})()
+}
+
+// monitorConsole monitora logs do console do navegador
+func (e *CNPJExtractor) monitorConsole(page *rod.Page, cnpj, correlationID string) {
+	page.EachEvent(func(e *proto.RuntimeConsoleAPICalled) {
+		if len(e.Args) > 0 {
+			var message string
+			if e.Args[0].Value.String() != "" {
+				message = e.Args[0].Value.String()
+			}
+
+			logLevel := "info"
+			switch e.Type {
+			case proto.RuntimeConsoleAPICalledTypeError:
+				logLevel = "error"
+			case proto.RuntimeConsoleAPICalledTypeWarning:
+				logLevel = "warning"
+			case proto.RuntimeConsoleAPICalledTypeLog:
+				logLevel = "info"
+			case proto.RuntimeConsoleAPICalledTypeDebug:
+				logLevel = "debug"
+			}
+
+			logger.GetGlobalLogger().WithComponent("console").InfoFields("Browser console", logger.Fields{
+				"cnpj":           cnpj,
+				"correlation_id": correlationID,
+				"level":          logLevel,
+				"message":        message,
+				"type":           string(e.Type),
+			})
+		}
+	})()
+
+	page.EachEvent(func(e *proto.RuntimeExceptionThrown) {
+		logger.GetGlobalLogger().WithComponent("console").ErrorFields("JavaScript exception", logger.Fields{
+			"cnpj":           cnpj,
+			"correlation_id": correlationID,
+			"message":        e.ExceptionDetails.Text,
+			"line_number":    e.ExceptionDetails.LineNumber,
+			"column_number":  e.ExceptionDetails.ColumnNumber,
+			"url":            e.ExceptionDetails.URL,
+		})
+	})()
+}
+
+// getTokenDebugInfo obtém informações de debug sobre o token hCaptcha
+func (e *CNPJExtractor) getTokenDebugInfo(page *rod.Page) map[string]any {
+	result := make(map[string]any)
+
+	// Verifica se há token presente
+	tokenInfo, err := page.Eval(`() => {
+		const selectors = [
+			'textarea[id^="h-captcha-response"]',
+			'textarea[name="h-captcha-response"]',
+			'textarea[name="g-recaptcha-response"]'
+		];
+
+		for (const selector of selectors) {
+			const element = document.querySelector(selector);
+			if (element) {
+				return {
+					selector: selector,
+					present: true,
+					value_length: element.value ? element.value.length : 0,
+					value_preview: element.value ? element.value.substring(0, 50) + '...' : '',
+					element_id: element.id,
+					element_name: element.name
+				};
+			}
+		}
+
+		return {
+			selector: 'none',
+			present: false,
+			value_length: 0,
+			value_preview: '',
+			element_id: '',
+			element_name: ''
+		};
+	}`)
+
+	if err != nil {
+		result["error"] = err.Error()
+		result["token_present"] = false
+		result["token_length"] = 0
+		result["token_selector"] = "error"
+	} else {
+		tokenData := tokenInfo.Value.Map()
+		result["token_present"] = tokenData["present"].Bool()
+		result["token_length"] = tokenData["value_length"].Int()
+		result["token_selector"] = tokenData["selector"].Str()
+		result["token_preview"] = tokenData["value_preview"].Str()
+		result["element_id"] = tokenData["element_id"].Str()
+		result["element_name"] = tokenData["element_name"].Str()
+	}
+
+	return result
 }
