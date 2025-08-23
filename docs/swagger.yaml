@@ -1,0 +1,269 @@
+basePath: /api/v1
+definitions:
+  types.Atividade:
+    properties:
+      codigo:
+        type: string
+      descricao:
+        type: string
+    type: object
+  types.AtividadesInfo:
+    properties:
+      principal:
+        $ref: '#/definitions/types.Atividade'
+      secundarias:
+        items:
+          $ref: '#/definitions/types.Atividade'
+        type: array
+    type: object
+  types.CNPJData:
+    properties:
+      atividades:
+        $ref: '#/definitions/types.AtividadesInfo'
+      cnpj:
+        $ref: '#/definitions/types.CNPJInfo'
+      comprovante:
+        $ref: '#/definitions/types.ComprovanteInfo'
+      contato:
+        $ref: '#/definitions/types.ContatoInfo'
+      empresa:
+        $ref: '#/definitions/types.EmpresaInfo'
+      endereco:
+        $ref: '#/definitions/types.EnderecoInfo'
+      metadados:
+        $ref: '#/definitions/types.MetadadosInfo'
+      situacao:
+        $ref: '#/definitions/types.SituacaoInfo'
+    type: object
+  types.CNPJInfo:
+    properties:
+      data_abertura:
+        type: string
+      numero:
+        type: string
+      tipo:
+        description: MATRIZ ou FILIAL
+        type: string
+    type: object
+  types.CacheInfo:
+    properties:
+      hit_rate:
+        type: number
+      hits:
+        type: integer
+      misses:
+        type: integer
+      size:
+        type: integer
+    type: object
+  types.ComprovanteInfo:
+    properties:
+      data_emissao:
+        type: string
+      hora_emissao:
+        type: string
+    type: object
+  types.ContatoInfo:
+    properties:
+      email:
+        type: string
+      telefone:
+        type: string
+    type: object
+  types.EmpresaInfo:
+    properties:
+      natureza_juridica:
+        $ref: '#/definitions/types.NaturezaJuridica'
+      nome_fantasia:
+        type: string
+      porte:
+        type: string
+      razao_social:
+        type: string
+    type: object
+  types.EnderecoInfo:
+    properties:
+      bairro:
+        type: string
+      cep:
+        type: string
+      complemento:
+        type: string
+      logradouro:
+        type: string
+      municipio:
+        type: string
+      numero:
+        type: string
+      uf:
+        type: string
+    type: object
+  types.ErrorResponse:
+    properties:
+      code:
+        type: integer
+      details:
+        type: string
+      error:
+        type: string
+      message:
+        type: string
+      time:
+        type: string
+    type: object
+  types.MetadadosInfo:
+    properties:
+      duracao:
+        type: string
+      fonte:
+        description: '"cache" ou "online"'
+        type: string
+      sucesso:
+        type: boolean
+      timestamp:
+        type: string
+      url_consulta:
+        type: string
+    type: object
+  types.NaturezaJuridica:
+    properties:
+      codigo:
+        type: string
+      descricao:
+        type: string
+    type: object
+  types.QueueInfo:
+    properties:
+      completed:
+        type: integer
+      pending:
+        type: integer
+      processing:
+        type: integer
+    type: object
+  types.SituacaoInfo:
+    properties:
+      cadastral:
+        type: string
+      data_situacao:
+        type: string
+      data_situacao_especial:
+        type: string
+      motivo:
+        type: string
+      situacao_especial:
+        type: string
+    type: object
+  types.SystemInfo:
+    properties:
+      go_version:
+        type: string
+      uptime:
+        type: string
+      version:
+        type: string
+    type: object
+  types.WorkerInfo:
+    properties:
+      active:
+        type: integer
+      idle:
+        type: integer
+      total:
+        type: integer
+    type: object
+  types.WorkerStats:
+    properties:
+      cache:
+        $ref: '#/definitions/types.CacheInfo'
+      queue:
+        $ref: '#/definitions/types.QueueInfo'
+      system:
+        $ref: '#/definitions/types.SystemInfo'
+      workers:
+        $ref: '#/definitions/types.WorkerInfo'
+    type: object
+host: localhost:3000
+info:
+  contact:
+    email: support@cnpjconsultor.com
+    name: API Support
+  description: API para consulta automatizada de CNPJs na Receita Federal com resolução
+    automática de captcha
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  termsOfService: http://swagger.io/terms/
+  title: CNPJ Consultor API
+  version: "1.0"
+paths:
+  /cnpj/{cnpj}:
+    get:
+      consumes:
+      - application/json
+      description: Consulta dados de um CNPJ na Receita Federal com resolução automática
+        de captcha
+      parameters:
+      - description: CNPJ (com ou sem formatação)
+        in: path
+        name: cnpj
+        required: true
+        type: string
+      - description: Usar cache (sempre false - busca direta)
+        in: query
+        name: cache
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/types.CNPJData'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/types.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/types.ErrorResponse'
+      summary: Consulta dados de um CNPJ
+      tags:
+      - CNPJ
+  /health:
+    get:
+      consumes:
+      - application/json
+      description: Verifica se o sistema está funcionando
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Health check
+      tags:
+      - Sistema
+  /status:
+    get:
+      consumes:
+      - application/json
+      description: Retorna estatísticas e status do sistema
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/types.WorkerStats'
+      summary: Status do sistema
+      tags:
+      - Sistema
+schemes:
+- http
+- https
+swagger: "2.0"

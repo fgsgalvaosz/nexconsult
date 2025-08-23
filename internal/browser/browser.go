@@ -1,8 +1,6 @@
 package browser
 
 import (
-	"cnpj-consultor/internal/captcha"
-	"cnpj-consultor/internal/types"
 	"context"
 	"fmt"
 	"regexp"
@@ -13,8 +11,27 @@ import (
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
-	"github.com/sirupsen/logrus"
+
+	"nexconsult/internal/captcha"
+	"nexconsult/internal/types"
 )
+
+// Constantes de configuração
+const (
+	DefaultMaxIdleTime    = 30 * time.Minute
+	DefaultPageTimeout    = 45 * time.Second
+	DefaultElementTimeout = 10 * time.Second
+	DefaultViewportWidth  = 1200
+	DefaultViewportHeight = 800
+
+	// URLs da Receita Federal
+	ReceitaBaseURL    = "https://solucoes.receita.fazenda.gov.br"
+	ReceitaCNPJURL    = ReceitaBaseURL + "/Servicos/cnpjreva/Cnpjreva_Solicitacao.asp"
+	ReceitaCaptchaURL = ReceitaBaseURL + "/Servicos/cnpjreva/captcha.asp"
+)
+
+// Recursos bloqueados para performance
+var blockedResources = []string{"*.css", "*.png", "*.jpg", "*.gif", "*.svg", "*.ico"}
 
 // BrowserManager gerencia instâncias de browser
 type BrowserManager struct {
@@ -36,7 +53,7 @@ func NewBrowserManager(size int, headless bool) *BrowserManager {
 		headless:    headless,
 		inUse:       make([]bool, size),
 		lastUsed:    make([]time.Time, size),
-		maxIdleTime: 30 * time.Minute, // Browsers idle por mais de 30min são reciclados
+		maxIdleTime: DefaultMaxIdleTime,
 	}
 }
 
@@ -57,7 +74,7 @@ func (bm *BrowserManager) Start() error {
 		bm.browsers = append(bm.browsers, browser)
 	}
 
-	logrus.WithField("count", bm.size).Info("Browser pool initialized")
+	// logger.GetGlobalLogger().WithComponent("browser").InfoFields("Browser pool initialized", logger.Fields{"count": bm.size})
 	return nil
 }
 
@@ -111,7 +128,7 @@ func (bm *BrowserManager) Stop() {
 		browser.Close()
 	}
 	bm.browsers = nil
-	logrus.Info("Browser pool stopped")
+	// logger.GetGlobalLogger().WithComponent("browser").Info("Browser pool stopped")
 }
 
 // createBrowser cria uma nova instância de browser otimizada
@@ -174,36 +191,10 @@ func (e *CNPJExtractor) ExtractCNPJData(cnpj string) (*types.CNPJData, error) {
 	}
 	defer page.Close()
 
-	// Define timeout global para a página (otimizado para busca direta)
-	page = page.Timeout(45 * time.Second)
-
 	// Configura página para performance
-	err = page.SetViewport(&proto.EmulationSetDeviceMetricsOverride{
-		Width:  1200,
-		Height: 800,
-	})
-	if err != nil {
-		logrus.WithError(err).Warn("Failed to set viewport")
+	if err := e.configurePagePerformance(page); err != nil {
+		return nil, fmt.Errorf("failed to configure page: %v", err)
 	}
-
-	// Bloqueia recursos desnecessários
-	router := page.HijackRequests()
-	defer router.Stop()
-
-	router.MustAdd("*.css", func(ctx *rod.Hijack) {
-		ctx.Response.Fail(proto.NetworkErrorReasonBlockedByClient)
-	})
-	router.MustAdd("*.png", func(ctx *rod.Hijack) {
-		ctx.Response.Fail(proto.NetworkErrorReasonBlockedByClient)
-	})
-	router.MustAdd("*.jpg", func(ctx *rod.Hijack) {
-		ctx.Response.Fail(proto.NetworkErrorReasonBlockedByClient)
-	})
-	router.MustAdd("*.gif", func(ctx *rod.Hijack) {
-		ctx.Response.Fail(proto.NetworkErrorReasonBlockedByClient)
-	})
-
-	go router.Run()
 
 	// Navega para página de consulta
 	url := fmt.Sprintf("https://solucoes.receita.fazenda.gov.br/servicos/cnpjreva/Cnpjreva_Solicitacao.asp?cnpj=%s", cnpj)
@@ -218,37 +209,37 @@ func (e *CNPJExtractor) ExtractCNPJData(cnpj string) (*types.CNPJData, error) {
 		return nil, fmt.Errorf("failed to wait for page load: %v", err)
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"cnpj": cnpj,
-		"url":  url,
-	}).Debug("Page loaded")
+	// 	// // logger.GetGlobalLogger().WithComponent("browser").DebugFields("Page loaded", logger.Fields{
+	// 		"cnpj": cnpj,
+	// 		"url":  url,
+	// 	}).Debug("Page loaded")
 
 	// Resolve captcha
-	logrus.Debug("Starting captcha resolution")
+	// logger.GetGlobalLogger().WithComponent("browser").Debug("Starting captcha resolution")
 	err = e.solveCaptcha(page)
 	if err != nil {
-		logrus.WithError(err).Error("Captcha resolution failed")
+		// logger.GetGlobalLogger().WithComponent("browser").WithError(err).Error("Captcha resolution failed")
 		return nil, fmt.Errorf("failed to solve captcha: %v", err)
 	}
-	logrus.Info("Captcha resolved, proceeding to form submission")
+	// logger.GetGlobalLogger().WithComponent("browser").Info("Captcha resolved, proceeding to form submission")
 
 	// Submete formulário
-	logrus.Debug("Starting form submission")
+	// logger.GetGlobalLogger().WithComponent("browser").Debug("Starting form submission")
 	err = e.submitForm(page)
 	if err != nil {
-		logrus.WithError(err).Error("Form submission failed")
+		// logger.GetGlobalLogger().WithComponent("browser").WithError(err).Error("Form submission failed")
 		return nil, fmt.Errorf("failed to submit form: %v", err)
 	}
-	logrus.Info("Form submitted successfully, proceeding to data extraction")
+	// logger.GetGlobalLogger().WithComponent("browser").Info("Form submitted successfully, proceeding to data extraction")
 
 	// Extrai dados
-	logrus.Debug("Starting data extraction")
+	// logger.GetGlobalLogger().WithComponent("browser").Debug("Starting data extraction")
 	data, err := e.extractData(page)
 	if err != nil {
-		logrus.WithError(err).Error("Data extraction failed")
+		// logger.GetGlobalLogger().WithComponent("browser").WithError(err).Error("Data extraction failed")
 		return nil, fmt.Errorf("failed to extract data: %v", err)
 	}
-	logrus.Info("Data extraction completed successfully")
+	// logger.GetGlobalLogger().WithComponent("browser").Info("Data extraction completed successfully")
 
 	// Adiciona metadados
 	data.Metadados.Timestamp = time.Now()
@@ -257,12 +248,38 @@ func (e *CNPJExtractor) ExtractCNPJData(cnpj string) (*types.CNPJData, error) {
 	data.Metadados.Fonte = "online"
 	data.Metadados.Sucesso = true
 
-	logrus.WithFields(logrus.Fields{
-		"cnpj":     cnpj,
-		"duration": time.Since(start),
-	}).Info("CNPJ data extracted successfully")
+	// // logger.GetGlobalLogger().WithComponent("browser").DebugFields("Page loaded", logger.Fields{
+	// 		"cnpj":     cnpj,
+	// 		"duration": time.Since(start),
+	// 	}).Info("CNPJ data extracted successfully")
 
 	return data, nil
+}
+
+// configurePagePerformance configura viewport e bloqueia recursos para performance
+func (e *CNPJExtractor) configurePagePerformance(page *rod.Page) error {
+	// Define timeout global para a página
+	page = page.Timeout(DefaultPageTimeout)
+
+	// Configura viewport
+	err := page.SetViewport(&proto.EmulationSetDeviceMetricsOverride{
+		Width:  DefaultViewportWidth,
+		Height: DefaultViewportHeight,
+	})
+	if err != nil {
+		// Log warning but continue
+	}
+
+	// Bloqueia recursos desnecessários para performance
+	router := page.HijackRequests()
+	for _, resource := range blockedResources {
+		router.MustAdd(resource, func(ctx *rod.Hijack) {
+			ctx.Response.Fail(proto.NetworkErrorReasonBlockedByClient)
+		})
+	}
+	go router.Run()
+
+	return nil
 }
 
 // injectCaptchaToken injeta token de captcha de forma robusta
@@ -372,7 +389,7 @@ func (e *CNPJExtractor) solveCaptcha(page *rod.Page) (err error) {
 	// Adiciona recovery para capturar panics
 	defer func() {
 		if r := recover(); r != nil {
-			logrus.WithField("panic", r).Error("🚨 PANIC during captcha solving")
+			// logger.GetGlobalLogger().WithComponent("browser").Info("Browser action").Error("🚨 PANIC during captcha solving")
 			err = fmt.Errorf("panic during captcha solving: %v", r)
 		}
 	}()
@@ -391,7 +408,7 @@ func (e *CNPJExtractor) solveCaptcha(page *rod.Page) (err error) {
 		return fmt.Errorf("sitekey is empty")
 	}
 
-	logrus.WithField("sitekey", *sitekey).Debug("Solving captcha")
+	// logger.GetGlobalLogger().WithComponent("browser").DebugFields("Solving captcha", logger.Fields{"sitekey": *sitekey})
 
 	// Resolve captcha
 	token, err := e.captchaClient.SolveHCaptcha(*sitekey, page.MustInfo().URL)
@@ -399,98 +416,90 @@ func (e *CNPJExtractor) solveCaptcha(page *rod.Page) (err error) {
 		return fmt.Errorf("captcha resolution failed: %v", err)
 	}
 
-	logrus.WithField("token_received", len(token) > 0).Info("🎯 CAPTCHA TOKEN RECEIVED - Starting injection process")
+	// 	// logger.GetGlobalLogger().WithComponent("browser").Info("Browser action") > 0).Info("🎯 CAPTCHA TOKEN RECEIVED - Starting injection process")
 
 	// Injeta token usando método robusto (sem fmt.Sprintf)
-	logrus.WithField("token_length", len(token)).Info("🔧 STARTING TOKEN INJECTION")
+	// 	// logger.GetGlobalLogger().WithComponent("browser").Info("Browser action")).Info("🔧 STARTING TOKEN INJECTION")
 
 	result, err := e.injectCaptchaToken(page, token)
 	if err != nil {
-		logrus.WithError(err).Error("❌ Token injection failed")
+		// logger.GetGlobalLogger().WithComponent("browser").WithError(err).Error("❌ Token injection failed")
 		return fmt.Errorf("failed to inject captcha token: %v", err)
 	}
 
-	logrus.WithField("inject_result", result).Info("📋 Injection result")
+	// logger.GetGlobalLogger().WithComponent("browser").InfoFields("📋 Injection result", logger.Fields{"inject_result": result})
 
 	if ok, _ := result["ok"].(bool); !ok {
 		errMsg, _ := result["err"].(string)
-		logrus.WithField("error", errMsg).Error("❌ Captcha injection failed")
+		// logger.GetGlobalLogger().WithComponent("browser").Info("Browser action").Error("❌ Captcha injection failed")
 		return fmt.Errorf("captcha injection failed: %s", errMsg)
 	}
 
-	logrus.Info("✅ Token injected successfully")
+	// logger.GetGlobalLogger().WithComponent("browser").Info("✅ Token injected successfully")
 
 	// Token injection já foi feito acima
 
 	// Aguarda um pouco para garantir que o token foi processado (igual ao Python)
-	logrus.Info("⏳ Waiting 2 seconds for token processing...")
+	// logger.GetGlobalLogger().WithComponent("browser").Info("⏳ Waiting 2 seconds for token processing...")
 	time.Sleep(2 * time.Second)
 
-	logrus.Info("✅ CAPTCHA TOKEN INJECTION COMPLETED SUCCESSFULLY")
+	// logger.GetGlobalLogger().WithComponent("browser").Info("✅ CAPTCHA TOKEN INJECTION COMPLETED SUCCESSFULLY")
 	return nil
 }
 
 // submitForm submete o formulário de consulta
 func (e *CNPJExtractor) submitForm(page *rod.Page) error {
-	logrus.Info("🚀 STARTING FORM SUBMISSION")
+	// logger.GetGlobalLogger().WithComponent("browser").Info("🚀 STARTING FORM SUBMISSION")
 
 	// Procura botão de consulta
-	logrus.Info("🔍 Looking for submit button...")
+	// logger.GetGlobalLogger().WithComponent("browser").Info("🔍 Looking for submit button...")
 	button, err := page.Timeout(10 * time.Second).Element("button.btn-primary")
 	if err != nil {
-		logrus.WithError(err).Error("Submit button not found")
+		// logger.GetGlobalLogger().WithComponent("browser").WithError(err).Error("Submit button not found")
 		return fmt.Errorf("submit button not found: %v", err)
 	}
 
-	logrus.Debug("Submit button found, clicking...")
+	// logger.GetGlobalLogger().WithComponent("browser").Debug("Submit button found, clicking...")
 
 	// Clica no botão
 	err = button.Click(proto.InputMouseButtonLeft, 1)
 	if err != nil {
-		logrus.WithError(err).Error("Failed to click submit button")
+		// logger.GetGlobalLogger().WithComponent("browser").WithError(err).Error("Failed to click submit button")
 		return fmt.Errorf("failed to click submit button: %v", err)
 	}
 
-	logrus.Info("Form submitted successfully, waiting for navigation")
+	// logger.GetGlobalLogger().WithComponent("browser").Info("Form submitted successfully, waiting for navigation")
 
 	// Aguarda navegação para página de resultado
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	logrus.Debug("Waiting for navigation to result page")
+	// logger.GetGlobalLogger().WithComponent("browser").Debug("Waiting for navigation to result page")
 
 	// Tenta aguardar pela URL de comprovante
 	page.Context(ctx).WaitNavigation(proto.PageLifecycleEventNameLoad)()
 
-	currentURL := page.MustInfo().URL
-	logrus.WithField("current_url", currentURL).Debug("Navigation completed")
+	_ = page.MustInfo().URL
+	// logger.GetGlobalLogger().WithComponent("browser").DebugFields("Navigation completed", logger.Fields{"current_url": currentURL})
 
 	// Se chegou aqui, verifica se é a página de resultado
-	logrus.Debug("Looking for result page content")
+	// logger.GetGlobalLogger().WithComponent("browser").Debug("Looking for result page content")
 	_, err = page.Timeout(15*time.Second).ElementR("*", "COMPROVANTE DE INSCRIÇÃO")
 	if err != nil {
-		logrus.WithError(err).WithField("url", currentURL).Error("Result page content not found")
+		// logger.GetGlobalLogger().WithComponent("browser").WithError(err).Info("Browser action").Error("Result page content not found")
 
 		// Tenta capturar o conteúdo da página para debug
 		if bodyText, textErr := page.Element("body"); textErr == nil {
-			if text, textErr := bodyText.Text(); textErr == nil {
-				logrus.WithField("page_content_preview", text[:min(500, len(text))]).Debug("Current page content")
+			if _, textErr := bodyText.Text(); textErr == nil {
+				// 				// logger.GetGlobalLogger().WithComponent("browser").Info("Browser action"))]).Debug("Current page content")
 			}
 		}
 
 		return fmt.Errorf("failed to wait for result page: %v", err)
 	}
 
-	logrus.Info("Result page loaded successfully")
+	// logger.GetGlobalLogger().WithComponent("browser").Info("Result page loaded successfully")
 	return nil
-}
-
-// min helper function
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 // extractData extrai os dados da página de resultado
@@ -514,10 +523,20 @@ func (e *CNPJExtractor) extractData(page *rod.Page) (*types.CNPJData, error) {
 
 // parseTextData converte texto da página em estrutura de dados
 func (e *CNPJExtractor) parseTextData(text string) *types.CNPJData {
-	lines := strings.Split(text, "\n")
+	cleanLines := e.cleanTextLines(text)
+	data := e.createEmptyCNPJData()
+	fieldMap := e.createFieldMap(data)
 
-	// Remove linhas vazias e trim
+	e.processTextLines(cleanLines, fieldMap, data)
+
+	return data
+}
+
+// cleanTextLines remove linhas vazias e faz trim
+func (e *CNPJExtractor) cleanTextLines(text string) []string {
+	lines := strings.Split(text, "\n")
 	var cleanLines []string
+
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line != "" {
@@ -525,7 +544,12 @@ func (e *CNPJExtractor) parseTextData(text string) *types.CNPJData {
 		}
 	}
 
-	data := &types.CNPJData{
+	return cleanLines
+}
+
+// createEmptyCNPJData cria estrutura vazia de dados CNPJ
+func (e *CNPJExtractor) createEmptyCNPJData() *types.CNPJData {
+	return &types.CNPJData{
 		CNPJ:        types.CNPJInfo{},
 		Empresa:     types.EmpresaInfo{},
 		Atividades:  types.AtividadesInfo{Secundarias: []types.Atividade{}},
@@ -535,9 +559,11 @@ func (e *CNPJExtractor) parseTextData(text string) *types.CNPJData {
 		Comprovante: types.ComprovanteInfo{},
 		Metadados:   types.MetadadosInfo{},
 	}
+}
 
-	// Mapa de campos para extração
-	fieldMap := map[string]func(string){
+// createFieldMap cria mapa de campos para extração
+func (e *CNPJExtractor) createFieldMap(data *types.CNPJData) map[string]func(string) {
+	return map[string]func(string){
 		"NÚMERO DE INSCRIÇÃO":                          func(v string) { data.CNPJ.Numero = v },
 		"DATA DE ABERTURA":                             func(v string) { data.CNPJ.DataAbertura = v },
 		"NOME EMPRESARIAL":                             func(v string) { data.Empresa.RazaoSocial = v },
@@ -559,8 +585,10 @@ func (e *CNPJExtractor) parseTextData(text string) *types.CNPJData {
 		"SITUAÇÃO CADASTRAL":         func(v string) { data.Situacao.Cadastral = v },
 		"DATA DA SITUAÇÃO CADASTRAL": func(v string) { data.Situacao.DataSituacao = v },
 	}
+}
 
-	// Processa linhas
+// processTextLines processa as linhas de texto extraindo dados
+func (e *CNPJExtractor) processTextLines(cleanLines []string, fieldMap map[string]func(string), data *types.CNPJData) {
 	for i, line := range cleanLines {
 		nextLine := ""
 		if i+1 < len(cleanLines) {
@@ -623,6 +651,4 @@ func (e *CNPJExtractor) parseTextData(text string) *types.CNPJData {
 			}
 		}
 	}
-
-	return data
 }

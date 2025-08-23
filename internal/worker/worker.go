@@ -1,9 +1,6 @@
 package worker
 
 import (
-	"cnpj-consultor/internal/browser"
-	"cnpj-consultor/internal/captcha"
-	"cnpj-consultor/internal/types"
 	"context"
 	"fmt"
 	"sync"
@@ -11,7 +8,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
+
+	"nexconsult/internal/browser"
+	"nexconsult/internal/captcha"
+	"nexconsult/internal/logger"
+	"nexconsult/internal/types"
 )
 
 // WorkerPool gerencia workers para processamento de CNPJs
@@ -85,6 +86,11 @@ func NewWorkerPool(workerCount int, captchaClient *captcha.SolveCaptchaClient) *
 	return pool
 }
 
+// GetJobQueue retorna o canal de jobs
+func (p *WorkerPool) GetJobQueue() chan<- *types.Job {
+	return p.jobQueue
+}
+
 // Start inicia o pool de workers
 func (wp *WorkerPool) Start() error {
 	// Inicia browser manager
@@ -98,13 +104,13 @@ func (wp *WorkerPool) Start() error {
 		go worker.start()
 	}
 
-	logrus.WithField("workers", len(wp.workers)).Info("Worker pool started")
+	logger.GetGlobalLogger().WithComponent("worker").InfoFields("Worker pool started", logger.Fields{"workers": len(wp.workers)})
 	return nil
 }
 
 // Stop para o pool de workers
 func (wp *WorkerPool) Stop() {
-	logrus.Info("Stopping worker pool...")
+	logger.GetGlobalLogger().WithComponent("worker").Info("Stopping worker pool...")
 
 	wp.cancel()
 	close(wp.jobQueue)
@@ -112,17 +118,17 @@ func (wp *WorkerPool) Stop() {
 	wp.wg.Wait()
 	wp.browserMgr.Stop()
 
-	logrus.Info("Worker pool stopped")
+	logger.GetGlobalLogger().WithComponent("worker").Info("Worker pool stopped")
 }
 
 // ProcessSingle processa um único CNPJ
-func (wp *WorkerPool) ProcessSingle(cnpj string, useCache bool) CNPJResult {
-	job := &Job{
+func (wp *WorkerPool) ProcessSingle(cnpj string, useCache bool) types.CNPJResult {
+	job := &types.Job{
 		ID:       uuid.New().String(),
 		CNPJ:     cnpj,
 		UseCache: useCache,
 		Created:  time.Now(),
-		Result:   make(chan CNPJResult, 1),
+		Result:   make(chan types.CNPJResult, 1),
 	}
 
 	// Envia job
@@ -130,7 +136,7 @@ func (wp *WorkerPool) ProcessSingle(cnpj string, useCache bool) CNPJResult {
 	case wp.jobQueue <- job:
 		atomic.AddInt64(&wp.stats.TotalJobs, 1)
 	case <-time.After(30 * time.Second):
-		return CNPJResult{
+		return types.CNPJResult{
 			CNPJ:   cnpj,
 			Error:  "timeout: queue is full",
 			Status: "error",
@@ -142,7 +148,7 @@ func (wp *WorkerPool) ProcessSingle(cnpj string, useCache bool) CNPJResult {
 	case result := <-job.Result:
 		return result
 	case <-time.After(5 * time.Minute):
-		return CNPJResult{
+		return types.CNPJResult{
 			CNPJ:   cnpj,
 			Error:  "timeout: processing took too long",
 			Status: "error",
@@ -151,13 +157,13 @@ func (wp *WorkerPool) ProcessSingle(cnpj string, useCache bool) CNPJResult {
 }
 
 // ProcessBatch processa múltiplos CNPJs
-func (wp *WorkerPool) ProcessBatch(cnpjs []string, useCache bool) BatchResponse {
+func (wp *WorkerPool) ProcessBatch(cnpjs []string, useCache bool) types.BatchResponse {
 	start := time.Now()
 
 	if len(cnpjs) == 0 {
-		return BatchResponse{
-			Results: []CNPJResult{},
-			Stats: BatchStats{
+		return types.BatchResponse{
+			Results: []types.CNPJResult{},
+			Stats: types.BatchStats{
 				Total:     0,
 				Success:   0,
 				Errors:    0,
@@ -170,14 +176,14 @@ func (wp *WorkerPool) ProcessBatch(cnpjs []string, useCache bool) BatchResponse 
 	}
 
 	// Cria jobs
-	jobs := make([]*Job, len(cnpjs))
+	jobs := make([]*types.Job, len(cnpjs))
 	for i, cnpj := range cnpjs {
-		jobs[i] = &Job{
+		jobs[i] = &types.Job{
 			ID:       uuid.New().String(),
 			CNPJ:     cnpj,
 			UseCache: useCache,
 			Created:  time.Now(),
-			Result:   make(chan CNPJResult, 1),
+			Result:   make(chan types.CNPJResult, 1),
 		}
 	}
 
@@ -188,7 +194,7 @@ func (wp *WorkerPool) ProcessBatch(cnpjs []string, useCache bool) BatchResponse 
 			atomic.AddInt64(&wp.stats.TotalJobs, 1)
 		case <-time.After(30 * time.Second):
 			// Se não conseguir enviar, retorna erro para este CNPJ
-			job.Result <- CNPJResult{
+			job.Result <- types.CNPJResult{
 				CNPJ:   job.CNPJ,
 				Error:  "timeout: queue is full",
 				Status: "error",
@@ -197,7 +203,7 @@ func (wp *WorkerPool) ProcessBatch(cnpjs []string, useCache bool) BatchResponse 
 	}
 
 	// Coleta resultados
-	results := make([]CNPJResult, len(jobs))
+	results := make([]types.CNPJResult, len(jobs))
 	var success, errors, cached int
 
 	for i, job := range jobs {
@@ -214,7 +220,7 @@ func (wp *WorkerPool) ProcessBatch(cnpjs []string, useCache bool) BatchResponse 
 				errors++
 			}
 		case <-time.After(5 * time.Minute):
-			results[i] = CNPJResult{
+			results[i] = types.CNPJResult{
 				CNPJ:   job.CNPJ,
 				Error:  "timeout: processing took too long",
 				Status: "error",
@@ -225,9 +231,9 @@ func (wp *WorkerPool) ProcessBatch(cnpjs []string, useCache bool) BatchResponse 
 
 	end := time.Now()
 
-	return BatchResponse{
+	return types.BatchResponse{
 		Results: results,
-		Stats: BatchStats{
+		Stats: types.BatchStats{
 			Total:     len(cnpjs),
 			Success:   success,
 			Errors:    errors,
@@ -240,31 +246,31 @@ func (wp *WorkerPool) ProcessBatch(cnpjs []string, useCache bool) BatchResponse 
 }
 
 // GetStats retorna estatísticas do pool
-func (wp *WorkerPool) GetStats() WorkerStats {
+func (wp *WorkerPool) GetStats() types.WorkerStats {
 	wp.mu.RLock()
 	defer wp.mu.RUnlock()
 
 	activeWorkers := atomic.LoadInt32(&wp.stats.ActiveWorkers)
 
-	return WorkerStats{
-		Workers: WorkerInfo{
+	return types.WorkerStats{
+		Workers: types.WorkerInfo{
 			Active: int(activeWorkers),
 			Idle:   len(wp.workers) - int(activeWorkers),
 			Total:  len(wp.workers),
 		},
-		Queue: QueueInfo{
+		Queue: types.QueueInfo{
 			Pending:    len(wp.jobQueue),
 			Processing: int(activeWorkers),
 			Completed:  int(atomic.LoadInt64(&wp.stats.CompletedJobs)),
 		},
-		Cache: CacheInfo{
+		Cache: types.CacheInfo{
 			HitRate: 0.0, // Cache desabilitado - sempre busca direta
 			Size:    0,
 			Hits:    0,
 			Misses:  0,
 		},
-		System: SystemInfo{
-			Uptime:    time.Since(wp.stats.StartTime),
+		System: types.SystemInfo{
+			Uptime:    time.Since(wp.stats.StartTime).String(),
 			Version:   "1.0.0",
 			GoVersion: "1.21",
 		},
@@ -275,27 +281,27 @@ func (wp *WorkerPool) GetStats() WorkerStats {
 func (w *Worker) start() {
 	defer w.pool.wg.Done()
 
-	logrus.WithField("worker_id", w.ID).Debug("Worker started")
+	logger.GetGlobalLogger().WithComponent("worker").DebugFields("Worker started", logger.Fields{"worker_id": w.ID})
 
 	for {
 		select {
 		case job, ok := <-w.pool.jobQueue:
 			if !ok {
-				logrus.WithField("worker_id", w.ID).Debug("Worker stopped")
+				logger.GetGlobalLogger().WithComponent("worker").DebugFields("Worker stopped", logger.Fields{"worker_id": w.ID})
 				return
 			}
 
 			w.processJob(job)
 
 		case <-w.pool.ctx.Done():
-			logrus.WithField("worker_id", w.ID).Debug("Worker stopped by context")
+			logger.GetGlobalLogger().WithComponent("worker").DebugFields("Worker stopped by context", logger.Fields{"worker_id": w.ID})
 			return
 		}
 	}
 }
 
 // processJob processa um job
-func (w *Worker) processJob(job *Job) {
+func (w *Worker) processJob(job *types.Job) {
 	atomic.StoreInt32(&w.isActive, 1)
 	atomic.AddInt32(&w.pool.stats.ActiveWorkers, 1)
 	defer func() {
@@ -306,57 +312,57 @@ func (w *Worker) processJob(job *Job) {
 
 	job.Started = time.Now()
 
-	logrus.WithFields(logrus.Fields{
+	logger.GetGlobalLogger().WithComponent("worker").DebugFields("Processing job", logger.Fields{
 		"worker_id": w.ID,
 		"job_id":    job.ID,
 		"cnpj":      job.CNPJ,
-	}).Debug("Processing job")
+	})
 
 	// Sempre extrai diretamente do site da Receita Federal
 	data, err := w.extractor.ExtractCNPJData(job.CNPJ)
 
 	job.Finished = time.Now()
 
-	var result CNPJResult
+	var result types.CNPJResult
 	if err != nil {
-		result = CNPJResult{
+		result = types.CNPJResult{
 			CNPJ:   job.CNPJ,
 			Error:  err.Error(),
 			Status: "error",
 		}
 		atomic.AddInt64(&w.pool.stats.FailedJobs, 1)
 
-		logrus.WithFields(logrus.Fields{
+		logger.GetGlobalLogger().WithComponent("worker").ErrorFields("Job failed", logger.Fields{
 			"worker_id": w.ID,
 			"job_id":    job.ID,
 			"cnpj":      job.CNPJ,
 			"error":     err.Error(),
 			"duration":  job.Finished.Sub(job.Started),
-		}).Error("Job failed")
+		})
 	} else {
-		result = CNPJResult{
+		result = types.CNPJResult{
 			CNPJ:   job.CNPJ,
 			Data:   data,
 			Status: "success", // Sempre "success" pois sempre busca diretamente
 		}
 		atomic.AddInt64(&w.pool.stats.CompletedJobs, 1)
 
-		logrus.WithFields(logrus.Fields{
+		logger.GetGlobalLogger().WithComponent("worker").InfoFields("Job completed successfully", logger.Fields{
 			"worker_id": w.ID,
 			"job_id":    job.ID,
 			"cnpj":      job.CNPJ,
 			"duration":  job.Finished.Sub(job.Started),
-		}).Info("Job completed successfully")
+		})
 	}
 
 	// Envia resultado
 	select {
 	case job.Result <- result:
 	case <-time.After(5 * time.Second):
-		logrus.WithFields(logrus.Fields{
+		logger.GetGlobalLogger().WithComponent("worker").WarnFields("Failed to send result - timeout", logger.Fields{
 			"worker_id": w.ID,
 			"job_id":    job.ID,
-		}).Warn("Failed to send result - timeout")
+		})
 	}
 }
 

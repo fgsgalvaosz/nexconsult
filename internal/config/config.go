@@ -37,6 +37,17 @@ func LoadConfig() *types.Config {
 			ElementTimeoutSeconds:    getEnvInt("BROWSER_ELEMENT_TIMEOUT", 15),
 			MaxIdleMinutes:           getEnvInt("BROWSER_MAX_IDLE_MINUTES", 30),
 		},
+		Logging: types.LoggingConfig{
+			Level:      getEnv("LOG_LEVEL", "info"),
+			Format:     getEnv("LOG_FORMAT", "console"),
+			Output:     getEnv("LOG_OUTPUT", "stdout"),
+			FilePath:   getEnv("LOG_FILE_PATH", ""),
+			MaxSize:    getEnvInt("LOG_MAX_SIZE", 100),
+			MaxBackups: getEnvInt("LOG_MAX_BACKUPS", 3),
+			MaxAge:     getEnvInt("LOG_MAX_AGE", 7),
+			Compress:   getEnvBool("LOG_COMPRESS", true),
+			Sampling:   getEnvBool("LOG_SAMPLING", false),
+		},
 		LogLevel: getEnv("LOG_LEVEL", "info"),
 	}
 

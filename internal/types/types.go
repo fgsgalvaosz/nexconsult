@@ -160,9 +160,9 @@ type CacheInfo struct {
 
 // SystemInfo contém informações do sistema
 type SystemInfo struct {
-	Uptime    time.Duration `json:"uptime"`
-	Version   string        `json:"version"`
-	GoVersion string        `json:"go_version"`
+	Uptime    string `json:"uptime"`
+	Version   string `json:"version"`
+	GoVersion string `json:"go_version"`
 }
 
 // Job representa um trabalho para o worker pool
@@ -183,7 +183,8 @@ type Config struct {
 	SolveCaptcha SolveCaptchaConfig `mapstructure:"solvecaptcha"`
 	RateLimit    RateLimitConfig    `mapstructure:"ratelimit"`
 	Browser      BrowserConfig      `mapstructure:"browser"`
-	LogLevel     string             `mapstructure:"log_level"`
+	Logging      LoggingConfig      `mapstructure:"logging"`
+	LogLevel     string             `mapstructure:"log_level"` // Mantido para compatibilidade
 }
 
 // ServerConfig contém configurações do servidor
@@ -224,12 +225,34 @@ type BrowserConfig struct {
 	MaxIdleMinutes           int `mapstructure:"max_idle_minutes"`
 }
 
+// LoggingConfig configurações de logging
+type LoggingConfig struct {
+	Level      string `mapstructure:"level"`
+	Format     string `mapstructure:"format"`
+	Output     string `mapstructure:"output"`
+	FilePath   string `mapstructure:"file_path"`
+	MaxSize    int    `mapstructure:"max_size"`
+	MaxBackups int    `mapstructure:"max_backups"`
+	MaxAge     int    `mapstructure:"max_age"`
+	Compress   bool   `mapstructure:"compress"`
+	Sampling   bool   `mapstructure:"sampling"`
+}
+
 // ErrorResponse representa uma resposta de erro
 type ErrorResponse struct {
 	Error   string    `json:"error"`
+	Message string    `json:"message,omitempty"`
 	Code    int       `json:"code"`
 	Details string    `json:"details,omitempty"`
 	Time    time.Time `json:"time"`
+}
+
+// StatusResponse representa a resposta do endpoint de status
+type StatusResponse struct {
+	Workers WorkerInfo `json:"workers"`
+	Queue   QueueInfo  `json:"queue"`
+	Cache   CacheInfo  `json:"cache"`
+	System  SystemInfo `json:"system"`
 }
 
 // HealthResponse representa a resposta do health check

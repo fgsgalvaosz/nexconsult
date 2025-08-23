@@ -10,8 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sirupsen/logrus"
 	"golang.org/x/time/rate"
+
+	"nexconsult/internal/logger"
 )
 
 // SolveCaptchaClient cliente para API do SolveCaptcha
@@ -81,10 +82,10 @@ func (c *SolveCaptchaClient) SolveHCaptcha(sitekey, pageURL string) (string, err
 
 	for attempt := 0; attempt < c.maxRetries; attempt++ {
 		if attempt > 0 {
-			logrus.WithFields(logrus.Fields{
+			logger.GetGlobalLogger().WithComponent("captcha").WarnFields("Retrying captcha resolution", logger.Fields{
 				"attempt": attempt + 1,
 				"sitekey": sitekey,
-			}).Warn("Retrying captcha resolution")
+			})
 
 			time.Sleep(time.Duration(attempt) * 5 * time.Second)
 		}
@@ -95,19 +96,19 @@ func (c *SolveCaptchaClient) SolveHCaptcha(sitekey, pageURL string) (string, err
 			c.stats.SuccessRequests++
 			c.mu.Unlock()
 
-			logrus.WithFields(logrus.Fields{
+			logger.GetGlobalLogger().WithComponent("captcha").InfoFields("Captcha resolved successfully", logger.Fields{
 				"duration": time.Since(start),
 				"attempt":  attempt + 1,
-			}).Info("Captcha resolved successfully")
+			})
 
 			return token, nil
 		}
 
 		lastErr = err
-		logrus.WithFields(logrus.Fields{
+		logger.GetGlobalLogger().WithComponent("captcha").ErrorFields("Captcha resolution failed", logger.Fields{
 			"error":   err.Error(),
 			"attempt": attempt + 1,
-		}).Error("Captcha resolution failed")
+		})
 	}
 
 	c.mu.Lock()
@@ -130,7 +131,7 @@ func (c *SolveCaptchaClient) solveCaptchaAttempt(sitekey, pageURL string) (strin
 		return "", fmt.Errorf("submit error: %v", err)
 	}
 
-	logrus.WithField("captcha_id", captchaID).Info("Captcha submitted")
+	logger.GetGlobalLogger().WithComponent("captcha").InfoFields("Captcha submitted", logger.Fields{"captcha_id": captchaID})
 
 	// Aguarda resolução
 	token, err := c.waitForSolution(captchaID)
@@ -195,23 +196,23 @@ func (c *SolveCaptchaClient) waitForSolution(captchaID string) (string, error) {
 
 			token, status, err := c.checkSolution(captchaID)
 			if err != nil {
-				logrus.WithError(err).Warn("Error checking captcha solution")
+				logger.GetGlobalLogger().WithComponent("captcha").WarnFields("Error checking captcha solution", logger.Fields{"error": err.Error()})
 				continue
 			}
 
 			switch status {
 			case "READY":
-				logrus.WithFields(logrus.Fields{
+				logger.GetGlobalLogger().WithComponent("captcha").InfoFields("Captcha solution ready", logger.Fields{
 					"captcha_id": captchaID,
 					"duration":   time.Since(start),
-				}).Info("Captcha solution ready")
+				})
 				return token, nil
 
 			case "CAPCHA_NOT_READY":
-				logrus.WithFields(logrus.Fields{
+				logger.GetGlobalLogger().WithComponent("captcha").DebugFields("Captcha not ready yet", logger.Fields{
 					"captcha_id": captchaID,
 					"elapsed":    time.Since(start),
-				}).Debug("Captcha not ready yet")
+				})
 				continue
 
 			default:

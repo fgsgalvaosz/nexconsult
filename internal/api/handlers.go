@@ -4,8 +4,8 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/sirupsen/logrus"
-	
+
+	"nexconsult/internal/logger"
 	"nexconsult/internal/types"
 	"nexconsult/internal/worker"
 )
@@ -54,10 +54,11 @@ func (h *Handlers) GetCNPJ(c *fiber.Ctx) error {
 	// Submete job
 	select {
 	case h.workerPool.GetJobQueue() <- job:
-		logrus.WithFields(logrus.Fields{
+		correlationID := GetCorrelationID(c)
+		logger.GetGlobalLogger().WithComponent("api").WithCorrelationID(correlationID).InfoFields("Job submitted", logger.Fields{
 			"cnpj":   cnpj,
 			"job_id": job.ID,
-		}).Info("Job submitted")
+		})
 	case <-time.After(5 * time.Second):
 		return c.Status(503).JSON(types.ErrorResponse{
 			Error:   "Sistema sobrecarregado",
@@ -90,10 +91,10 @@ func (h *Handlers) GetCNPJ(c *fiber.Ctx) error {
 // @Tags Sistema
 // @Accept json
 // @Produce json
-// @Success 200 {object} types.StatusResponse
+// @Success 200 {object} types.WorkerStats
 // @Router /status [get]
 func (h *Handlers) GetStatus(c *fiber.Ctx) error {
-	status := h.workerPool.GetStatus()
+	status := h.workerPool.GetStats()
 	return c.JSON(status)
 }
 
