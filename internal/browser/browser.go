@@ -3,6 +3,7 @@ package browser
 import (
 	"context"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -219,7 +220,7 @@ func (bm *BrowserManager) createBrowser() (*rod.Browser, error) {
 	start := time.Now()
 	bm.logger.Debug("Creating new browser instance")
 
-	// Configurações do launcher
+	// Configurações do launcher com cookies habilitados
 	l := launcher.New().
 		Headless(bm.headless).
 		NoSandbox(true).
@@ -231,6 +232,8 @@ func (bm *BrowserManager) createBrowser() (*rod.Browser, error) {
 		Set("disable-background-timer-throttling").
 		Set("disable-backgrounding-occluded-windows").
 		Set("disable-renderer-backgrounding").
+		Set("enable-cookies").
+		Set("accept-cookies").
 		Set("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
 	bm.logger.Debug("Launching browser process")
@@ -367,6 +370,15 @@ func (e *CNPJExtractor) ExtractCNPJData(cnpj string) (*types.CNPJData, error) {
 		"load_duration":  time.Since(start).String(),
 	})
 
+	// Habilitar cookies explicitamente
+	e.logger.Debug("Enabling cookies support")
+	if cookieErr := e.enableCookies(page); cookieErr != nil {
+		e.logger.WarnFields("Failed to enable cookies", logger.Fields{
+			"error": cookieErr.Error(),
+		})
+		// Não falha aqui, apenas avisa
+	}
+
 	// Resolve captcha
 	captchaStart := time.Now()
 	e.logger.DebugFields("Starting captcha resolution", logger.Fields{
@@ -398,15 +410,159 @@ func (e *CNPJExtractor) ExtractCNPJData(cnpj string) (*types.CNPJData, error) {
 		"correlation_id": correlationID,
 	})
 
-	err = e.submitForm(page, cnpj)
-	if err != nil {
-		e.logger.ErrorFields("Form submission failed", logger.Fields{
+	// Submete formulário com retry automático
+	maxFormRetries := 3 // Aumentado para 3 tentativas
+	var formErr error
+
+	for formAttempt := 1; formAttempt <= maxFormRetries; formAttempt++ {
+		e.logger.DebugFields("Form submission attempt", logger.Fields{
+			"attempt":     formAttempt,
+			"max_retries": maxFormRetries,
+			"cnpj":        cnpj,
+		})
+
+		formErr = e.submitForm(page, cnpj)
+		if formErr == nil {
+			// Sucesso!
+			break
+		}
+
+		// Verifica se é erro de cookies desativados (não pode ser resolvido com retry)
+		if strings.Contains(formErr.Error(), "cookies_disabled_error") {
+			e.logger.ErrorFields("Cookies disabled error - cannot retry", logger.Fields{
+				"attempt": formAttempt,
+				"error":   formErr.Error(),
+				"cnpj":    cnpj,
+			})
+			// Para erro de cookies, não tenta novamente
+			break
+		}
+
+		// Determina o tipo de erro
+		errorType := "unknown"
+		if strings.Contains(formErr.Error(), "captcha_incorrect_error") {
+			errorType = "captcha_incorrect"
+		} else if strings.Contains(formErr.Error(), "campos não preenchidos") ||
+			strings.Contains(formErr.Error(), "form_validation_error") {
+			errorType = "form_validation"
+		} else if strings.Contains(formErr.Error(), "invalid_parameters_error") {
+			errorType = "invalid_parameters"
+		}
+
+		// Verifica se é erro de parâmetros inválidos (pode ser resolvido com restart)
+		if errorType == "invalid_parameters" {
+			e.logger.ErrorFields("Invalid parameters error - will restart browser", logger.Fields{
+				"attempt": formAttempt,
+				"error":   formErr.Error(),
+				"cnpj":    cnpj,
+			})
+		}
+
+		// Verifica se é erro que pode ser resolvido com retry
+		shouldRetry := errorType == "captcha_incorrect" ||
+			errorType == "form_validation" ||
+			errorType == "invalid_parameters"
+
+		if shouldRetry {
+
+			e.logger.WarnFields("Form submission failed, retrying", logger.Fields{
+				"attempt":    formAttempt,
+				"error":      formErr.Error(),
+				"error_type": errorType,
+				"cnpj":       cnpj,
+			})
+
+			if formAttempt < maxFormRetries {
+				// Para erros de formulário e parâmetros inválidos, reinicia o navegador
+				if errorType == "form_validation" || errorType == "invalid_parameters" {
+					e.logger.InfoFields("Restarting browser due to form validation error", logger.Fields{
+						"attempt":    formAttempt,
+						"error_type": errorType,
+						"cnpj":       cnpj,
+					})
+					newBrowser := e.restartBrowser()
+					if newBrowser == nil {
+						formErr = fmt.Errorf("failed to restart browser")
+						break
+					}
+
+					// Cria nova página com o navegador reiniciado
+					newPage, pageErr := newBrowser.Page(proto.TargetCreateTarget{})
+					if pageErr != nil {
+						e.logger.ErrorFields("Failed to create new page after browser restart", logger.Fields{
+							"error": pageErr.Error(),
+						})
+						formErr = pageErr
+						break
+					}
+
+					// Atualiza a página para a nova instância
+					page = newPage
+
+					e.logger.Info("Browser and page restarted, navigating to CNPJ page")
+
+					// Navega novamente para a página
+					if navErr := page.Navigate(url); navErr != nil {
+						e.logger.ErrorFields("Failed to navigate after browser restart", logger.Fields{
+							"error": navErr.Error(),
+						})
+						formErr = navErr
+						break
+					}
+
+					// Aguarda carregamento
+					if waitErr := page.WaitLoad(); waitErr != nil {
+						e.logger.ErrorFields("Failed to wait for page load after restart", logger.Fields{
+							"error": waitErr.Error(),
+						})
+						formErr = waitErr
+						break
+					}
+
+					// Habilita cookies novamente
+					if cookieErr := e.enableCookies(page); cookieErr != nil {
+						e.logger.WarnFields("Failed to enable cookies after restart", logger.Fields{
+							"error": cookieErr.Error(),
+						})
+					}
+				} else {
+					// Para outros tipos de erro, aguarda com delay progressivo
+					retryDelay := time.Duration(formAttempt) * 5 * time.Second // Aumentado de 3s para 5s
+					e.logger.DebugFields("Waiting before retry", logger.Fields{
+						"delay":      retryDelay.String(),
+						"error_type": errorType,
+						"attempt":    formAttempt,
+					})
+					time.Sleep(retryDelay)
+				}
+
+				// Re-resolve captcha para nova tentativa
+				e.logger.Debug("Re-resolving captcha for retry")
+				if captchaErr := e.solveCaptcha(page); captchaErr != nil {
+					e.logger.ErrorFields("Captcha re-resolution failed", logger.Fields{
+						"attempt": formAttempt,
+						"error":   captchaErr.Error(),
+					})
+					formErr = captchaErr
+					break
+				}
+				continue
+			}
+		}
+
+		// Para outros tipos de erro, não tenta novamente
+		break
+	}
+
+	if formErr != nil {
+		e.logger.ErrorFields("Form submission failed after all attempts", logger.Fields{
 			"cnpj":           cnpj,
 			"correlation_id": correlationID,
 			"duration":       time.Since(formStart).String(),
-			"error":          err.Error(),
+			"attempts":       maxFormRetries,
+			"error":          formErr.Error(),
 		})
-		return nil, fmt.Errorf("failed to submit form: %v", err)
+		return nil, fmt.Errorf("failed to submit form after %d attempts: %v", maxFormRetries, formErr)
 	}
 
 	e.logger.InfoFields("Form submitted successfully", logger.Fields{
@@ -649,53 +805,148 @@ func (e *CNPJExtractor) solveCaptcha(page *rod.Page) (err error) {
 		"token_length":     len(token),
 	})
 
-	// Injeta token usando método robusto
-	e.logger.Debug("Starting token injection")
+	// Injeta token com retry automático
+	e.logger.Debug("Starting token injection with retry")
 	injectStart := time.Now()
 
-	result, err := e.injectCaptchaToken(page, token)
-	if err != nil {
-		e.logger.ErrorFields("Token injection failed", logger.Fields{
-			"error":    err.Error(),
+	maxRetries := 3
+	var lastErr error
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		e.logger.DebugFields("Token injection attempt", logger.Fields{
+			"attempt":     attempt,
+			"max_retries": maxRetries,
+		})
+
+		result, err := e.injectCaptchaToken(page, token)
+		if err != nil {
+			lastErr = err
+			e.logger.WarnFields("Token injection attempt failed", logger.Fields{
+				"attempt": attempt,
+				"error":   err.Error(),
+			})
+
+			if attempt < maxRetries {
+				time.Sleep(time.Duration(attempt) * 2 * time.Second)
+				continue
+			}
+			break
+		}
+
+		e.logger.DebugFields("Token injection result", logger.Fields{
+			"attempt": attempt,
+			"result":  result,
+		})
+
+		if ok, _ := result["ok"].(bool); !ok {
+			errMsg, _ := result["err"].(string)
+			lastErr = fmt.Errorf("captcha injection failed: %s", errMsg)
+			e.logger.WarnFields("Captcha injection failed", logger.Fields{
+				"attempt":   attempt,
+				"error_msg": errMsg,
+				"result":    result,
+			})
+
+			if attempt < maxRetries {
+				time.Sleep(time.Duration(attempt) * 2 * time.Second)
+				continue
+			}
+			break
+		}
+
+		// Aguarda um pouco para garantir que o token foi aplicado
+		e.logger.Debug("Waiting for token to be applied")
+		time.Sleep(3 * time.Second)
+
+		// Verifica se o token foi realmente aplicado
+		if validateErr := e.validateCaptchaToken(page); validateErr != nil {
+			lastErr = validateErr
+			e.logger.WarnFields("Captcha token validation failed after injection", logger.Fields{
+				"attempt": attempt,
+				"error":   validateErr.Error(),
+			})
+
+			if attempt < maxRetries {
+				time.Sleep(time.Duration(attempt) * 2 * time.Second)
+				continue
+			}
+
+			e.saveDebugInfo(page, "captcha_validation_failed", "unknown")
+			break
+		}
+
+		// Sucesso!
+		e.logger.InfoFields("Captcha token injection and validation successful", logger.Fields{
+			"attempt":  attempt,
 			"duration": time.Since(injectStart).String(),
 		})
-		return fmt.Errorf("failed to inject captcha token: %v", err)
+		return nil
 	}
 
-	e.logger.DebugFields("Token injection result", logger.Fields{
-		"result":   result,
-		"duration": time.Since(injectStart).String(),
+	// Se chegou aqui, todas as tentativas falharam
+	e.logger.ErrorFields("All captcha injection attempts failed", logger.Fields{
+		"max_retries": maxRetries,
+		"last_error":  lastErr.Error(),
+		"duration":    time.Since(injectStart).String(),
 	})
-
-	if ok, _ := result["ok"].(bool); !ok {
-		errMsg, _ := result["err"].(string)
-		e.logger.ErrorFields("Captcha injection failed", logger.Fields{
-			"error_msg": errMsg,
-			"result":    result,
-		})
-		return fmt.Errorf("captcha injection failed: %s", errMsg)
-	}
-
-	e.logger.Info("Token injected successfully")
-
-	// Aguarda processamento do token
-	e.logger.Debug("Waiting for token processing")
-	time.Sleep(2 * time.Second)
-
-	totalDuration := time.Since(start)
-	e.logger.InfoFields("Captcha resolution completed successfully", logger.Fields{
-		"total_duration":   totalDuration.String(),
-		"resolve_duration": time.Since(resolveStart).String(),
-		"inject_duration":  time.Since(injectStart).String(),
-	})
-
-	return nil
+	return fmt.Errorf("failed to inject and validate captcha token after %d attempts: %v", maxRetries, lastErr)
 }
 
 // submitForm submete o formulário de consulta
-func (e *CNPJExtractor) submitForm(page *rod.Page) error {
+func (e *CNPJExtractor) submitForm(page *rod.Page, cnpj string) error {
 	start := time.Now()
 	e.logger.Debug("Starting form submission")
+
+	// Aguarda JavaScript terminar de executar
+	e.logger.Debug("Waiting for JavaScript execution to complete")
+	time.Sleep(3 * time.Second)
+
+	// Verifica se o formulário está realmente pronto
+	if err := e.waitForFormReady(page, cnpj); err != nil {
+		e.logger.ErrorFields("Form not ready for submission", logger.Fields{
+			"error": err.Error(),
+		})
+		return fmt.Errorf("form not ready: %v", err)
+	}
+
+	// NOVA: Validar formulário antes de submeter
+	e.logger.Debug("Validating form before submission")
+	if err := e.validateForm(page, cnpj); err != nil {
+		e.logger.ErrorFields("Form validation failed", logger.Fields{
+			"error": err.Error(),
+			"cnpj":  cnpj,
+		})
+
+		// Salvar debug info
+		e.saveDebugInfo(page, "form_validation_failed", cnpj)
+		return fmt.Errorf("form validation failed: %v", err)
+	}
+
+	// Aguarda mais tempo para garantir que o captcha foi processado pelo servidor
+	waitTime := 8 * time.Second
+	e.logger.DebugFields("Extended wait for captcha server processing", logger.Fields{
+		"wait_time": waitTime.String(),
+	})
+	time.Sleep(waitTime)
+
+	// Verifica se o token captcha ainda é válido
+	e.logger.Debug("Validating captcha token before submission")
+	if err := e.validateCaptchaToken(page); err != nil {
+		e.logger.ErrorFields("Captcha token invalid before submission", logger.Fields{
+			"error": err.Error(),
+		})
+		return fmt.Errorf("captcha token invalid: %v", err)
+	}
+
+	// Verifica novamente se o formulário ainda está válido
+	e.logger.Debug("Final form validation before submission")
+	if err := e.validateForm(page, cnpj); err != nil {
+		e.logger.ErrorFields("Final form validation failed", logger.Fields{
+			"error": err.Error(),
+			"cnpj":  cnpj,
+		})
+		return fmt.Errorf("final form validation failed: %v", err)
+	}
 
 	// Procura botão de consulta
 	e.logger.Debug("Looking for submit button")
@@ -705,6 +956,9 @@ func (e *CNPJExtractor) submitForm(page *rod.Page) error {
 			"timeout": "10s",
 			"error":   err.Error(),
 		})
+
+		// Salvar debug info
+		e.saveDebugInfo(page, "submit_button_not_found", cnpj)
 		return fmt.Errorf("submit button not found: %v", err)
 	}
 
@@ -743,6 +997,63 @@ func (e *CNPJExtractor) submitForm(page *rod.Page) error {
 	// Se chegou aqui, verifica se é a página de resultado
 	e.logger.Debug("Looking for result page content")
 	verifyStart := time.Now()
+
+	// Primeiro, verifica se há erro na página
+	if errorElement, errorErr := page.Element("*"); errorErr == nil {
+		if pageText, textErr := errorElement.Text(); textErr == nil {
+			// Verifica tipos específicos de erro da Receita Federal
+			if strings.Contains(pageText, "Erro na Consulta") || strings.Contains(pageText, "Campos não preenchidos") {
+				e.logger.ErrorFields("Form submission error detected", logger.Fields{
+					"current_url": currentURL,
+					"error_type":  "form_validation_error",
+				})
+
+				// Salvar debug info específico para erro de formulário
+				e.saveDebugInfo(page, "form_submission_error", cnpj)
+				return fmt.Errorf("form submission failed: campos não preenchidos ou erro na consulta")
+			}
+
+			// Verifica erro de captcha incorreto
+			if strings.Contains(pageText, "digitou os caracteres fornecidos na imagem incorretamente") ||
+				strings.Contains(pageText, "Erro na Emissão de Comprovante") {
+				e.logger.ErrorFields("Captcha error detected", logger.Fields{
+					"current_url": currentURL,
+					"error_type":  "captcha_incorrect",
+				})
+
+				// Salvar debug info específico para erro de captcha
+				e.saveDebugInfo(page, "captcha_incorrect_error", cnpj)
+				return fmt.Errorf("captcha_incorrect_error: caracteres do captcha digitados incorretamente")
+			}
+
+			// Verifica erro de cookies desativados
+			if strings.Contains(pageText, "navegador está com a opção de gravação de cookies desativada") ||
+				strings.Contains(pageText, "Cookie estiver desativado") {
+				e.logger.ErrorFields("Cookies disabled error detected", logger.Fields{
+					"current_url": currentURL,
+					"error_type":  "cookies_disabled",
+				})
+
+				// Salvar debug info específico para erro de cookies
+				e.saveDebugInfo(page, "cookies_disabled_error", cnpj)
+				return fmt.Errorf("cookies_disabled_error: cookies estão desativados no navegador")
+			}
+
+			// Verifica erro de parâmetros inválidos
+			if strings.Contains(pageText, "Parâmetros Inválidos") ||
+				strings.Contains(currentURL, "Cnpjreva_Erro.asp") {
+				e.logger.ErrorFields("Invalid parameters error detected", logger.Fields{
+					"current_url": currentURL,
+					"error_type":  "invalid_parameters",
+				})
+
+				// Salvar debug info específico para erro de parâmetros
+				e.saveDebugInfo(page, "invalid_parameters_error", cnpj)
+				return fmt.Errorf("invalid_parameters_error: parâmetros inválidos detectados")
+			}
+		}
+	}
+
 	_, err = page.Timeout(15*time.Second).ElementR("*", "COMPROVANTE DE INSCRIÇÃO")
 	if err != nil {
 		e.logger.ErrorFields("Result page content not found", logger.Fields{
@@ -762,6 +1073,8 @@ func (e *CNPJExtractor) submitForm(page *rod.Page) error {
 			}
 		}
 
+		// Salvar debug info quando falha na navegação
+		e.saveDebugInfo(page, "navigation_failed", cnpj)
 		return fmt.Errorf("failed to wait for result page: %v", err)
 	}
 
@@ -774,6 +1087,352 @@ func (e *CNPJExtractor) submitForm(page *rod.Page) error {
 	})
 
 	return nil
+}
+
+// validateForm verifica se todos os campos estão preenchidos corretamente
+func (e *CNPJExtractor) validateForm(page *rod.Page, cnpj string) error {
+	e.logger.Debug("Starting form validation")
+
+	// 1. Verificar campo CNPJ
+	if err := e.validateCNPJField(page, cnpj); err != nil {
+		return fmt.Errorf("CNPJ field validation failed: %v", err)
+	}
+
+	// 2. Verificar token hCaptcha
+	if err := e.validateCaptchaToken(page); err != nil {
+		return fmt.Errorf("captcha token validation failed: %v", err)
+	}
+
+	e.logger.Debug("Form validation completed successfully")
+	return nil
+}
+
+// validateCNPJField verifica se o campo CNPJ está preenchido corretamente
+func (e *CNPJExtractor) validateCNPJField(page *rod.Page, expectedCNPJ string) error {
+	// Possíveis seletores para o campo CNPJ
+	selectors := []string{
+		"input[name='cnpj']",
+		"input[id='cnpj']",
+		"input[name='txtCNPJ']",
+		"input[type='text']", // fallback
+	}
+
+	for _, selector := range selectors {
+		element, err := page.Element(selector)
+		if err != nil {
+			continue // tenta próximo seletor
+		}
+
+		// Verifica valor atual
+		currentValue, err := element.Property("value")
+		if err != nil {
+			continue
+		}
+
+		currentStr := currentValue.String()
+		cleanCurrent := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(currentStr, ".", ""), "/", ""), "-", "")
+		cleanExpected := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(expectedCNPJ, ".", ""), "/", ""), "-", "")
+
+		if cleanCurrent == cleanExpected {
+			e.logger.DebugFields("CNPJ field validated successfully", logger.Fields{
+				"selector":       selector,
+				"value":          currentStr,
+				"clean_current":  cleanCurrent,
+				"clean_expected": cleanExpected,
+			})
+			return nil
+		}
+
+		// Se não está preenchido, tenta preencher
+		e.logger.WarnFields("CNPJ field not filled, attempting to fill", logger.Fields{
+			"selector":       selector,
+			"current_value":  currentStr,
+			"expected_value": expectedCNPJ,
+		})
+
+		err = element.Input(expectedCNPJ)
+		if err != nil {
+			continue
+		}
+
+		// Verifica se foi preenchido
+		newValue, err := element.Property("value")
+		if err == nil {
+			newStr := newValue.String()
+			cleanNew := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(newStr, ".", ""), "/", ""), "-", "")
+			if cleanNew == cleanExpected {
+				e.logger.InfoFields("CNPJ field filled successfully", logger.Fields{
+					"selector":       selector,
+					"value":          newStr,
+					"clean_new":      cleanNew,
+					"clean_expected": cleanExpected,
+				})
+				return nil
+			}
+		}
+	}
+
+	return fmt.Errorf("CNPJ field not found or could not be filled")
+}
+
+// validateCaptchaToken verifica se o token hCaptcha foi aplicado corretamente
+func (e *CNPJExtractor) validateCaptchaToken(page *rod.Page) error {
+	selectors := []string{
+		"textarea[name='h-captcha-response']",
+		"textarea[name='g-recaptcha-response']",
+		"textarea[id^='g-recaptcha-response']",
+		"input[name='h-captcha-response']",
+		"input[name='g-recaptcha-response']",
+	}
+
+	var foundElements []string
+	var tokenInfo []string
+
+	for _, selector := range selectors {
+		element, err := page.Element(selector)
+		if err != nil {
+			continue // tenta próximo seletor
+		}
+
+		foundElements = append(foundElements, selector)
+
+		// Verifica se tem valor
+		value, err := element.Property("value")
+		if err != nil {
+			tokenInfo = append(tokenInfo, fmt.Sprintf("%s: erro ao ler valor", selector))
+			continue
+		}
+
+		valueStr := value.String()
+		tokenInfo = append(tokenInfo, fmt.Sprintf("%s: length=%d", selector, len(valueStr)))
+
+		if len(valueStr) > 50 { // tokens hCaptcha são longos
+			e.logger.DebugFields("Captcha token validated successfully", logger.Fields{
+				"selector":       selector,
+				"token_length":   len(valueStr),
+				"token_preview":  valueStr[:50] + "...",
+				"found_elements": foundElements,
+			})
+			return nil
+		}
+	}
+
+	// Log detalhado sobre elementos encontrados
+	e.logger.ErrorFields("Captcha token validation failed", logger.Fields{
+		"found_elements":   foundElements,
+		"token_info":       tokenInfo,
+		"selectors_tested": selectors,
+	})
+
+	return fmt.Errorf("captcha token not found or invalid - found %d elements but no valid tokens", len(foundElements))
+}
+
+// enableCookies força a habilitação de cookies na página
+func (e *CNPJExtractor) enableCookies(page *rod.Page) error {
+	e.logger.Debug("Enabling cookies support")
+
+	// Usa a sintaxe correta do Rod: função arrow
+	_, err := page.Eval(`() => {
+		document.cookie = "test_cookie=enabled; path=/; SameSite=Lax";
+		console.log('Cookie test set, navigator.cookieEnabled:', navigator.cookieEnabled);
+	}`)
+
+	if err != nil {
+		e.logger.ErrorFields("Failed to enable cookies", logger.Fields{
+			"error": err.Error(),
+		})
+		return fmt.Errorf("failed to enable cookies: %v", err)
+	}
+
+	// Verifica se cookies estão funcionando
+	result, err := page.Eval(`() => document.cookie.indexOf('test_cookie=enabled') !== -1`)
+	if err != nil {
+		e.logger.WarnFields("Failed to verify cookies", logger.Fields{
+			"error": err.Error(),
+		})
+		return nil // Não falha, apenas avisa
+	}
+
+	cookieWorking := false
+	if result != nil {
+		cookieWorking = result.Value.Bool()
+	}
+
+	e.logger.DebugFields("Cookie verification result", logger.Fields{
+		"cookie_working": cookieWorking,
+	})
+
+	return nil
+}
+
+// waitForFormReady aguarda o formulário estar completamente pronto para submissão
+func (e *CNPJExtractor) waitForFormReady(page *rod.Page, cnpj string) error {
+	e.logger.Debug("Waiting for form to be ready")
+
+	maxAttempts := 10
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		e.logger.DebugFields("Checking form readiness", logger.Fields{
+			"attempt":      attempt,
+			"max_attempts": maxAttempts,
+		})
+
+		// 1. Verifica se o campo CNPJ está preenchido
+		cnpjField, err := page.Element("input[name='cnpj']")
+		if err != nil {
+			e.logger.WarnFields("CNPJ field not found", logger.Fields{
+				"attempt": attempt,
+				"error":   err.Error(),
+			})
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		// Verifica o valor do campo
+		value, err := cnpjField.Property("value")
+		if err != nil || value.String() == "" {
+			e.logger.WarnFields("CNPJ field empty", logger.Fields{
+				"attempt": attempt,
+				"value":   value.String(),
+			})
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		// Normaliza ambos os valores para comparação (remove formatação)
+		fieldValue := strings.ReplaceAll(strings.ReplaceAll(value.String(), ".", ""), "/", "")
+		fieldValue = strings.ReplaceAll(fieldValue, "-", "")
+		expectedValue := strings.ReplaceAll(strings.ReplaceAll(cnpj, ".", ""), "/", "")
+		expectedValue = strings.ReplaceAll(expectedValue, "-", "")
+
+		if fieldValue != expectedValue {
+			e.logger.WarnFields("CNPJ field mismatch", logger.Fields{
+				"attempt":             attempt,
+				"field_value":         value.String(),
+				"expected_cnpj":       cnpj,
+				"normalized_field":    fieldValue,
+				"normalized_expected": expectedValue,
+			})
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		// 2. Verifica se o captcha está carregado
+		captchaLoaded, err := page.Eval(`() => {
+			const iframe = document.querySelector('iframe[src*="hcaptcha"]');
+			return iframe !== null && iframe.style.display !== 'none';
+		}`)
+		if err != nil || !captchaLoaded.Value.Bool() {
+			e.logger.WarnFields("Captcha not loaded", logger.Fields{
+				"attempt": attempt,
+				"loaded":  captchaLoaded.Value.Bool(),
+			})
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		// 3. Verifica se há token de captcha
+		hasToken, err := page.Eval(`() => {
+			const textarea = document.querySelector('textarea[name="h-captcha-response"]');
+			return textarea && textarea.value && textarea.value.length > 50;
+		}`)
+		if err != nil || !hasToken.Value.Bool() {
+			e.logger.WarnFields("Captcha token not ready", logger.Fields{
+				"attempt":   attempt,
+				"has_token": hasToken.Value.Bool(),
+			})
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		// 4. Verifica se não há validações JavaScript pendentes
+		jsReady, err := page.Eval(`() => {
+			// Verifica se jQuery está carregado e não há requests pendentes
+			if (typeof jQuery !== 'undefined') {
+				return jQuery.active === 0;
+			}
+			// Se não há jQuery, assume que está pronto
+			return true;
+		}`)
+		if err != nil || !jsReady.Value.Bool() {
+			e.logger.WarnFields("JavaScript validations pending", logger.Fields{
+				"attempt":  attempt,
+				"js_ready": jsReady.Value.Bool(),
+			})
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		// Se chegou aqui, o formulário está pronto
+		e.logger.InfoFields("Form is ready for submission", logger.Fields{
+			"attempt":        attempt,
+			"cnpj_filled":    true,
+			"captcha_loaded": true,
+			"token_ready":    true,
+			"js_ready":       true,
+		})
+		return nil
+	}
+
+	return fmt.Errorf("form not ready after %d attempts", maxAttempts)
+}
+
+// restartBrowser força o restart do navegador para limpar estado corrompido
+func (e *CNPJExtractor) restartBrowser() *rod.Browser {
+	e.logger.Info("Restarting browser to clear corrupted state")
+
+	// Solicita um novo navegador do pool
+	newBrowser := e.browserMgr.GetBrowser()
+	if newBrowser == nil {
+		e.logger.Error("Failed to get new browser from pool")
+		return nil
+	}
+
+	e.logger.Info("Browser restarted successfully")
+	return newBrowser
+}
+
+// saveDebugInfo salva screenshot e HTML para análise
+func (e *CNPJExtractor) saveDebugInfo(page *rod.Page, errorType string, cnpj string) {
+	timestamp := time.Now().Format("20060102_150405")
+
+	// Screenshot
+	screenshotPath := fmt.Sprintf("debug_%s_%s_%s.png", errorType, cnpj, timestamp)
+	screenshotData, err := page.Screenshot(true, &proto.PageCaptureScreenshot{
+		Format: proto.PageCaptureScreenshotFormatPng,
+	})
+	if err == nil {
+		// Salvar screenshot
+		if writeErr := os.WriteFile(screenshotPath, screenshotData, 0644); writeErr == nil {
+			e.logger.InfoFields("Debug screenshot saved", logger.Fields{
+				"path":       screenshotPath,
+				"error_type": errorType,
+				"cnpj":       cnpj,
+			})
+		}
+	}
+
+	// HTML
+	htmlPath := fmt.Sprintf("debug_%s_%s_%s.html", errorType, cnpj, timestamp)
+	html := page.MustHTML()
+	if writeErr := os.WriteFile(htmlPath, []byte(html), 0644); writeErr == nil {
+		e.logger.InfoFields("Debug HTML saved", logger.Fields{
+			"path":       htmlPath,
+			"error_type": errorType,
+			"cnpj":       cnpj,
+		})
+	}
+
+	// URL atual
+	currentURL := page.MustInfo().URL
+
+	e.logger.ErrorFields("Debug info saved", logger.Fields{
+		"error_type":      errorType,
+		"cnpj":            cnpj,
+		"current_url":     currentURL,
+		"screenshot_path": screenshotPath,
+		"html_path":       htmlPath,
+		"timestamp":       timestamp,
+	})
 }
 
 // extractData extrai os dados da página de resultado
