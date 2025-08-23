@@ -201,6 +201,51 @@ export LOG_LEVEL=error
 ./cnpj-consultor
 ```
 
+## 📸 Screenshots de Erro
+
+O sistema captura automaticamente screenshots da página web sempre que ocorrer um erro durante o processamento. Esta funcionalidade é essencial para debug e análise de problemas.
+
+### Funcionalidades
+
+- **Captura Automática**: Screenshots são capturados automaticamente em todos os pontos de erro
+- **Múltiplos Formatos**: Salva tanto screenshot (PNG) quanto HTML da página
+- **Organização**: Arquivos organizados por tipo de erro, CNPJ e timestamp
+- **Não Intrusivo**: Não afeta o fluxo principal da aplicação
+
+### Tipos de Erro Capturados
+
+- Erro de navegação
+- Erro de carregamento da página
+- Erro de captcha (elemento não encontrado, resolução falhou, etc.)
+- Erro de submissão do formulário
+- Erro de extração de dados
+- E muitos outros...
+
+### Localização dos Arquivos
+
+```
+screenshots/
+├── erro_captcha_12345678000195_20240123_143022.png
+├── erro_captcha_12345678000195_20240123_143022.html
+├── erro_navigation_98765432000100_20240123_143045.png
+└── erro_navigation_98765432000100_20240123_143045.html
+```
+
+### Teste da Funcionalidade
+
+```bash
+# Compile o teste
+go build -o test_screenshot test_screenshot.go
+
+# Execute o teste (irá gerar erros intencionalmente)
+./test_screenshot
+
+# Verifique os screenshots gerados
+ls -la screenshots/
+```
+
+Para mais detalhes, consulte [SCREENSHOT_FEATURE.md](SCREENSHOT_FEATURE.md).
+
 ## 📈 Performance
 
 - **Primeira consulta**: ~30-40s (inclui resolução de captcha)

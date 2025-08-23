@@ -398,7 +398,7 @@ func (e *CNPJExtractor) ExtractCNPJData(cnpj string) (*types.CNPJData, error) {
 		"correlation_id": correlationID,
 	})
 
-	err = e.submitForm(page)
+	err = e.submitForm(page, cnpj)
 	if err != nil {
 		e.logger.ErrorFields("Form submission failed", logger.Fields{
 			"cnpj":           cnpj,
