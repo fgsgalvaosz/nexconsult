@@ -1,245 +1,121 @@
-# CNPJ API
+# Consulta CNPJ - Receita Federal
 
-API para consulta de CNPJs na Receita Federal do Brasil, construída com Go e Gin.
+Este projeto implementa uma automação para consultar CNPJs no site da Receita Federal, baseado nos passos de gravação fornecidos.
 
-## 🚀 Características
+## Funcionalidades
 
-- **Alta Performance**: Construída com Go para máxima eficiência
-- **Cache Inteligente**: Redis para cache com fallback em memória
-- **Pool de Browsers**: Gerenciamento automático de browsers Chrome/Chromium
-- **Rate Limiting**: Proteção contra abuso da API
-- **Documentação Swagger**: Interface interativa para testes
-- **Monitoramento**: Health checks e métricas detalhadas
-- **Consulta em Lote**: Suporte para múltiplas consultas simultâneas
+- Automação completa da consulta de CNPJ
+- Resolução automática de hCaptcha (quando possível)
+- Extração dos dados do resultado
+- Logging detalhado das operações
+- Suporte a modo headless
 
-## 📋 Pré-requisitos
+## Requisitos
 
-- Go 1.21+
-- Docker e Docker Compose
-- Make (opcional, mas recomendado)
+- Python 3.7+
+- Chrome/Chromium instalado
+- Dependências listadas em `requirements.txt`
 
-## 🛠️ Configuração de Desenvolvimento
+## Instalação
 
-### 1. Clone o repositório
-```bash
-git clone <repository-url>
-cd cnpj-api
-```
-
-### 2. Configuração completa (recomendado)
-```bash
-make setup
-```
-
-Este comando irá:
-- Instalar dependências Go
-- Instalar ferramentas de desenvolvimento
-- Iniciar serviços Docker (Redis, PostgreSQL)
-- Gerar documentação Swagger
-
-### 3. Configuração manual (alternativa)
-
-#### Instalar dependências
-```bash
-make deps
-```
-
-#### Instalar ferramentas de desenvolvimento
-```bash
-make dev-tools
-```
-
-#### Iniciar serviços de desenvolvimento
-```bash
-make docker-up
-```
-
-#### Gerar documentação Swagger
-```bash
-make swagger
-```
-
-## 🏃‍♂️ Executando a Aplicação
-
-### Desenvolvimento com Hot Reload
-```bash
-make dev
-```
-
-### Execução simples
-```bash
-make run
-```
-
-### Início rápido (serviços + aplicação)
-```bash
-make start
-```
-
-## 🐳 Serviços de Desenvolvimento
-
-O Docker Compose inclui:
-
-- **Redis** (localhost:6379) - Cache
-- **PostgreSQL** (localhost:5432) - Banco de dados
-- **Redis Commander** (http://localhost:8081) - Interface web para Redis
-- **pgAdmin** (http://localhost:8082) - Interface web para PostgreSQL
-  - Email: admin@cnpj-api.com
-  - Senha: admin123
-
-### Comandos Docker
-```bash
-# Iniciar serviços
-make docker-up
-
-# Parar serviços
-make docker-down
-
-# Ver logs
-make docker-logs
-
-# Limpeza completa
-make docker-clean
-```
-
-## 📚 Documentação da API
-
-Após iniciar a aplicação, acesse:
-- **Swagger UI**: http://localhost:8080/swagger/index.html
-- **API Base**: http://localhost:8080/api/v1
-
-### Endpoints Principais
-
-#### Consulta CNPJ
-```bash
-GET /api/v1/cnpj/{cnpj}
-```
-
-#### Consulta em Lote
-```bash
-POST /api/v1/cnpj/batch
-Content-Type: application/json
-
-{
-  "cnpjs": ["11222333000181", "11333444000172"]
-}
-```
-
-#### Health Check
-```bash
-GET /health
-```
-
-#### Métricas
-```bash
-GET /metrics
-```
-
-## 🔧 Comandos Make Disponíveis
+1. Clone ou baixe este projeto
+2. Instale as dependências:
 
 ```bash
-make help          # Mostra todos os comandos disponíveis
-make build         # Compila a aplicação
-make run           # Compila e executa
-make dev           # Modo desenvolvimento com hot reload
-make test          # Executa testes
-make test-coverage # Testes com relatório de cobertura
-make clean         # Limpa artefatos de build
-make fmt           # Formata código Go
-make lint          # Executa linter
-make security      # Verificações de segurança
-make swagger       # Gera documentação Swagger
+pip install -r requirements.txt
 ```
 
-## ⚙️ Configuração
+## Uso
 
-A aplicação usa variáveis de ambiente definidas no arquivo `.env`. As principais configurações:
+### Uso Básico
 
-### Servidor
-- `PORT`: Porta da aplicação (padrão: 8080)
-- `ENVIRONMENT`: Ambiente (development/production)
+```python
+from cnpj_consulta import CNPJConsulta
 
-### Redis
-- `REDIS_HOST`: Host do Redis (padrão: localhost)
-- `REDIS_PORT`: Porta do Redis (padrão: 6379)
+# Cria uma instância do consultor
+consultor = CNPJConsulta(headless=False)
 
-### PostgreSQL
-- `DB_HOST`: Host do banco (padrão: localhost)
-- `DB_PORT`: Porta do banco (padrão: 5432)
-- `DB_USER`: Usuário do banco
-- `DB_PASSWORD`: Senha do banco
+try:
+    # Consulta um CNPJ
+    resultado = consultor.consultar_cnpj("38139407000177")
+    
+    if resultado:
+        print("Consulta realizada com sucesso!")
+        print(f"URL: {resultado['url_resultado']}")
+    else:
+        print("Falha na consulta")
+        
+finally:
+    consultor.fechar()
+```
 
-### CNPJ Service
-- `SOLVE_CAPTCHA_API_KEY`: Chave da API SolveCaptcha
-- `CNPJ_TIMEOUT`: Timeout para consultas (segundos)
-
-### Rate Limiting
-- `RATE_LIMIT_RPM`: Requests por minuto (padrão: 1000)
-- `RATE_LIMIT_BURST`: Burst size (padrão: 50)
-
-## 🧪 Testes
+### Executar o exemplo
 
 ```bash
-# Executar todos os testes
-make test
-
-# Testes com cobertura
-make test-coverage
-
-# Teste de endpoint específico
-curl http://localhost:8080/health
+python cnpj_consulta.py
 ```
 
-## 📊 Monitoramento
+## Estrutura do Projeto
 
-### Health Checks
-- `/health` - Status geral da aplicação
-- `/health/ready` - Readiness probe
-- `/health/live` - Liveness probe
-
-### Métricas
-- `/metrics` - Métricas da aplicação em JSON
-
-### Logs
-A aplicação gera logs estruturados em JSON com informações detalhadas sobre:
-- Requests HTTP
-- Performance
-- Erros
-- Cache hits/misses
-- Status dos browsers
-
-## 🔒 Segurança
-
-- Rate limiting por IP
-- Headers de segurança (CSP, HSTS, etc.)
-- Validação de entrada
-- Sanitização de dados
-- Autenticação por token para endpoints administrativos
-
-## 🚀 Deploy
-
-Para produção, configure as variáveis de ambiente apropriadas e:
-
-```bash
-# Build para produção
-go build -o cnpj-api cmd/api/main.go
-
-# Executar
-./cnpj-api
+```
+.
+├── cnpj_consulta.py    # Classe principal para consulta
+├── requirements.txt    # Dependências do projeto
+└── README.md          # Este arquivo
 ```
 
-## 🤝 Contribuição
+## Como Funciona
 
-1. Fork o projeto
-2. Crie uma branch para sua feature (`git checkout -b feature/AmazingFeature`)
-3. Commit suas mudanças (`git commit -m 'Add some AmazingFeature'`)
-4. Push para a branch (`git push origin feature/AmazingFeature`)
-5. Abra um Pull Request
+O script segue os passos da gravação fornecida:
 
-## 📝 Licença
+1. **Configuração do navegador**: Define viewport de 1100x633px
+2. **Navegação**: Acessa a URL da Receita Federal com o CNPJ
+3. **Resolução de Captcha**: Tenta resolver o hCaptcha automaticamente
+4. **Consulta**: Clica no botão "CONSULTAR"
+5. **Extração**: Coleta os dados da página de resultado
 
-Este projeto está sob a licença MIT. Veja o arquivo `LICENSE` para detalhes.
+## Limitações e Considerações
 
-## 🆘 Suporte
+- **hCaptcha**: A resolução automática pode não funcionar sempre. Em casos reais, pode ser necessária intervenção manual
+- **Rate Limiting**: O site da Receita Federal pode ter limitações de taxa
+- **Mudanças no Site**: Se o site mudar sua estrutura, o script pode precisar de ajustes
+- **Uso Responsável**: Use com moderação e respeite os termos de uso do site
 
-Para suporte, abra uma issue no repositório ou entre em contato com a equipe de desenvolvimento.
+## Personalização
+
+### Modo Headless
+
+Para executar sem interface gráfica:
+
+```python
+consultor = CNPJConsulta(headless=True)
+```
+
+### Extração de Dados Específicos
+
+Você pode modificar o método `_extrair_dados_resultado()` para extrair campos específicos como:
+- Razão social
+- Nome fantasia
+- Situação cadastral
+- Data de abertura
+- Endereço
+- Atividade principal
+
+## Troubleshooting
+
+### Chrome não encontrado
+Certifique-se de que o Chrome está instalado no sistema.
+
+### Timeout errors
+Aumente os tempos de espera se a conexão estiver lenta.
+
+### Captcha não resolvido
+Em alguns casos, pode ser necessário resolver o captcha manualmente.
+
+## Contribuição
+
+Sinta-se à vontade para contribuir com melhorias, correções de bugs ou novas funcionalidades.
+
+## Aviso Legal
+
+Este projeto é apenas para fins educacionais e de automação pessoal. Certifique-se de respeitar os termos de uso do site da Receita Federal e use com responsabilidade.
