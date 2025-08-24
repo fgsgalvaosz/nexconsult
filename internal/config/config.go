@@ -13,14 +13,14 @@ func LoadConfig() *types.Config {
 		Server: types.ServerConfig{
 			Port:         getEnvInt("PORT", 3000),
 			Prefork:      getEnvBool("PREFORK", false),
-			ReadTimeout:  getEnvInt("READ_TIMEOUT", 30),
-			WriteTimeout: getEnvInt("WRITE_TIMEOUT", 30),
+			ReadTimeout:  getEnvInt("READ_TIMEOUT", 600),  // 10 minutos
+			WriteTimeout: getEnvInt("WRITE_TIMEOUT", 600), // 10 minutos
 			IdleTimeout:  getEnvInt("IDLE_TIMEOUT", 120),
 		},
 		Workers: types.WorkersConfig{
 			Count:          getEnvInt("WORKERS_COUNT", 5),
 			MaxConcurrent:  getEnvInt("MAX_CONCURRENT", 10),
-			TimeoutSeconds: getEnvInt("WORKER_TIMEOUT", 300),
+			TimeoutSeconds: getEnvInt("WORKER_TIMEOUT", 600), // 10 minutos
 		},
 		// Cache removido - sempre busca direta
 		SolveCaptcha: types.SolveCaptchaConfig{
@@ -29,16 +29,16 @@ func LoadConfig() *types.Config {
 			MaxRetries:     getEnvInt("CAPTCHA_MAX_RETRIES", 3),
 		},
 		RateLimit: types.RateLimitConfig{
-			RequestsPerMinute: getEnvInt("RATE_LIMIT_RPM", 10),       // 10 req/min por IP (mais conservador)
-			BurstSize:         getEnvInt("RATE_LIMIT_BURST", 2),      // 2 requisições em burst
-			MaxQueueSize:      getEnvInt("MAX_QUEUE_SIZE", 1000),     // 1000 jobs na fila
-			CleanupInterval:   getEnvInt("RATE_CLEANUP_INTERVAL", 5), // Limpeza a cada 5 min
+			RequestsPerMinute: getEnvInt("RATE_LIMIT_RPM", 30),       // 30 req/min por IP (otimizado)
+			BurstSize:         getEnvInt("RATE_LIMIT_BURST", 5),      // 5 requisições em burst
+			MaxQueueSize:      getEnvInt("MAX_QUEUE_SIZE", 2000),     // 2000 jobs na fila
+			CleanupInterval:   getEnvInt("RATE_CLEANUP_INTERVAL", 3), // Limpeza a cada 3 min
 		},
 		Browser: types.BrowserConfig{
-			PageTimeoutSeconds:       getEnvInt("BROWSER_PAGE_TIMEOUT", 30),
-			NavigationTimeoutSeconds: getEnvInt("BROWSER_NAV_TIMEOUT", 30),
-			ElementTimeoutSeconds:    getEnvInt("BROWSER_ELEMENT_TIMEOUT", 15),
-			MaxIdleMinutes:           getEnvInt("BROWSER_MAX_IDLE_MINUTES", 30),
+			PageTimeoutSeconds:       getEnvInt("BROWSER_PAGE_TIMEOUT", 45),     // Aumentado para captcha
+			NavigationTimeoutSeconds: getEnvInt("BROWSER_NAV_TIMEOUT", 20),      // Reduzido para navegação
+			ElementTimeoutSeconds:    getEnvInt("BROWSER_ELEMENT_TIMEOUT", 10),  // Reduzido para elementos
+			MaxIdleMinutes:           getEnvInt("BROWSER_MAX_IDLE_MINUTES", 15), // Reduzido para cleanup
 		},
 		Logging: types.LoggingConfig{
 			Level:      getEnv("LOG_LEVEL", "info"),

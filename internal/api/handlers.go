@@ -77,7 +77,7 @@ func (h *Handlers) GetCNPJ(c *fiber.Ctx) error {
 				Message: result.Error,
 			})
 		}
-	case <-time.After(5 * time.Minute):
+	case <-time.After(10 * time.Minute):
 		return c.Status(408).JSON(types.ErrorResponse{
 			Error:   "Timeout",
 			Message: "Consulta demorou mais que o esperado",

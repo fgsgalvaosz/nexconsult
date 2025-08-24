@@ -15,6 +15,14 @@ import (
 	"nexconsult/internal/logger"
 )
 
+// CachedToken representa um token em cache
+type CachedToken struct {
+	Token     string
+	ExpiresAt time.Time
+	SiteKey   string
+	PageURL   string
+}
+
 // SolveCaptchaClient cliente para API do SolveCaptcha
 type SolveCaptchaClient struct {
 	apiKey     string
@@ -25,6 +33,13 @@ type SolveCaptchaClient struct {
 	timeout    time.Duration
 	mu         sync.RWMutex
 	stats      CaptchaStats
+
+	// Cache de tokens
+	tokenCache map[string]*CachedToken
+	cacheTTL   time.Duration
+
+	// Pool de workers para paralelização
+	workerPool chan struct{}
 }
 
 // CaptchaStats estatísticas do cliente captcha
@@ -49,16 +64,16 @@ func NewSolveCaptchaClient(apiKey string) *SolveCaptchaClient {
 		apiKey:  apiKey,
 		baseURL: "https://api.solvecaptcha.com",
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: 15 * time.Second, // Reduzido para requests mais rápidos
 			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     30 * time.Second,
+				MaxIdleConns:        20,               // Aumentado para melhor reutilização
+				MaxIdleConnsPerHost: 20,               // Aumentado para melhor reutilização
+				IdleConnTimeout:     60 * time.Second, // Aumentado para manter conexões
 			},
 		},
-		limiter:    rate.NewLimiter(rate.Every(2*time.Second), 1), // 1 request a cada 2 segundos
-		maxRetries: 3,
-		timeout:    300 * time.Second, // 5 minutos timeout para resolução
+		limiter:    rate.NewLimiter(rate.Every(1*time.Second), 2), // 2 requests por segundo (otimizado)
+		maxRetries: 2,                                             // Reduzido para falhar mais rápido
+		timeout:    240 * time.Second,                             // 4 minutos timeout (reduzido)
 		stats:      CaptchaStats{},
 	}
 }
@@ -82,12 +97,16 @@ func (c *SolveCaptchaClient) SolveHCaptcha(sitekey, pageURL string) (string, err
 
 	for attempt := 0; attempt < c.maxRetries; attempt++ {
 		if attempt > 0 {
+			// Backoff exponencial: 2^attempt * 2 segundos (2s, 4s, 8s...)
+			backoffDuration := time.Duration(1<<uint(attempt)) * 2 * time.Second
+
 			logger.GetGlobalLogger().WithComponent("captcha").WarnFields("Retrying captcha resolution", logger.Fields{
-				"attempt": attempt + 1,
-				"sitekey": sitekey,
+				"attempt":         attempt + 1,
+				"sitekey":         sitekey,
+				"backoff_seconds": backoffDuration.Seconds(),
 			})
 
-			time.Sleep(time.Duration(attempt) * 5 * time.Second)
+			time.Sleep(backoffDuration)
 		}
 
 		token, err := c.solveCaptchaAttempt(sitekey, pageURL)
@@ -178,7 +197,7 @@ func (c *SolveCaptchaClient) submitCaptcha(sitekey, pageURL string) (string, err
 // waitForSolution aguarda a resolução do captcha
 func (c *SolveCaptchaClient) waitForSolution(captchaID string) (string, error) {
 	start := time.Now()
-	ticker := time.NewTicker(3 * time.Second)
+	ticker := time.NewTicker(2 * time.Second) // Reduzido para verificar mais frequentemente
 	defer ticker.Stop()
 
 	timeout := time.After(c.timeout)

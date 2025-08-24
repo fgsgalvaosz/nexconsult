@@ -29,8 +29,8 @@ func minInt(a, b int) int {
 // Constantes de configuração otimizadas para velocidade
 const (
 	DefaultMaxIdleTime    = 30 * time.Minute
-	DefaultPageTimeout    = 30 * time.Second // Reduzido de 45s
-	DefaultElementTimeout = 5 * time.Second  // Reduzido de 10s
+	DefaultPageTimeout    = 60 * time.Second // Aumentado para dar tempo ao captcha
+	DefaultElementTimeout = 10 * time.Second // Restaurado para evitar timeouts
 	DefaultViewportWidth  = 1200
 	DefaultViewportHeight = 800
 
@@ -40,8 +40,9 @@ const (
 	ReceitaCaptchaURL = ReceitaBaseURL + "/Servicos/cnpjreva/captcha.asp"
 )
 
-// Recursos bloqueados para performance
-var blockedResources = []string{"*.css", "*.png", "*.jpg", "*.gif", "*.svg", "*.ico"}
+// Recursos bloqueados removidos para evitar problemas de renderização
+
+// WarmPage removido - funcionalidade desabilitada
 
 // BrowserManager gerencia instâncias de browser
 type BrowserManager struct {
@@ -54,6 +55,11 @@ type BrowserManager struct {
 	lastUsed    []time.Time // Track last usage for cleanup
 	maxIdleTime time.Duration
 	logger      logger.Logger
+
+	// Pool de páginas pré-aquecidas (desabilitado temporariamente)
+	// warmPages    []*WarmPage
+	// warmPagesMu  sync.RWMutex
+	// maxWarmPages int
 }
 
 // NewBrowserManager cria um novo gerenciador de browsers
@@ -108,6 +114,9 @@ func (bm *BrowserManager) Start() error {
 		"pool_size": bm.size,
 		"duration":  duration.String(),
 	})
+
+	// Warm pages desabilitadas temporariamente para evitar consumir todos os browsers
+	// go bm.maintainWarmPages()
 
 	return nil
 }
@@ -223,6 +232,8 @@ func (bm *BrowserManager) Stop() {
 	})
 }
 
+// Warm pages functionality removed - was causing browser pool exhaustion
+
 // createBrowser cria uma nova instância de browser otimizada
 func (bm *BrowserManager) createBrowser() (*rod.Browser, error) {
 	start := time.Now()
@@ -326,14 +337,14 @@ func (e *CNPJExtractor) ExtractCNPJData(cnpj string) (data *types.CNPJData, err 
 	})
 
 	// Configura página
-	page, err := e.setupPage(cnpj, correlationID)
+	pageCtx, err := e.setupPage(cnpj, correlationID)
 	if err != nil {
 		return nil, err
 	}
-	defer page.Close()
+	defer pageCtx.Close()
 
 	// Resolve captcha
-	if err := e.solveCaptcha(page); err != nil {
+	if err := e.solveCaptcha(pageCtx.Page); err != nil {
 		e.logger.ErrorFields("Captcha resolution failed", logger.Fields{
 			"cnpj":           cnpj,
 			"correlation_id": correlationID,
@@ -343,12 +354,21 @@ func (e *CNPJExtractor) ExtractCNPJData(cnpj string) (data *types.CNPJData, err 
 	}
 
 	// Submete formulário com retry
-	if err := e.submitFormWithRetry(page, cnpj, correlationID); err != nil {
+	if err := e.submitFormWithRetry(pageCtx.Page, cnpj, correlationID); err != nil {
 		return nil, err
 	}
 
+	// Aguarda página de resultado estar pronta (simplificado)
+	e.logger.InfoFields("Comprovante page reached - proceeding with data extraction", logger.Fields{
+		"cnpj":           cnpj,
+		"correlation_id": correlationID,
+	})
+
+	// Aguarda um pouco para garantir que a página carregou completamente
+	time.Sleep(2 * time.Second)
+
 	// Extrai dados
-	data, err = e.extractData(page)
+	data, err = e.extractData(pageCtx.Page)
 	if err != nil {
 		e.logger.ErrorFields("Data extraction failed", logger.Fields{
 			"cnpj":           cnpj,
@@ -359,20 +379,84 @@ func (e *CNPJExtractor) ExtractCNPJData(cnpj string) (data *types.CNPJData, err 
 	}
 
 	// Finaliza
-	return e.finalizeCNPJData(data, page, cnpj, correlationID, start)
+	return e.finalizeCNPJData(data, pageCtx.Page, cnpj, correlationID, start)
+}
+
+// PageContext mantém contexto da página e browser
+type PageContext struct {
+	Page    *rod.Page
+	Browser *rod.Browser
+	Manager *BrowserManager
+}
+
+// Close libera recursos da página e browser
+func (pc *PageContext) Close() {
+	if pc.Page != nil {
+		pc.Page.Close()
+	}
+	if pc.Browser != nil && pc.Manager != nil {
+		pc.Manager.ReleaseBrowser(pc.Browser)
+	}
 }
 
 // setupPage configura e navega para a página do CNPJ
-func (e *CNPJExtractor) setupPage(cnpj, correlationID string) (*rod.Page, error) {
+func (e *CNPJExtractor) setupPage(cnpj, correlationID string) (*PageContext, error) {
+	// Warm pages desabilitadas temporariamente
+	/*
+		if warmPage := e.browserMgr.getWarmPage(); warmPage != nil {
+			pageCtx := &PageContext{
+				Page:    warmPage.Page,
+				Browser: warmPage.Browser,
+				Manager: e.browserMgr,
+			}
+
+			// Configura monitoramento
+			go e.monitorNetworkRequests(warmPage.Page, cnpj, correlationID)
+			go e.monitorConsole(warmPage.Page, cnpj, correlationID)
+
+			// Configura performance se necessário
+			if err := e.configurePagePerformance(warmPage.Page); err != nil {
+				e.browserMgr.releaseWarmPage(warmPage)
+				return nil, fmt.Errorf("failed to configure warm page: %v", err)
+			}
+
+			// Navega para URL específica do CNPJ
+			url := fmt.Sprintf("https://solucoes.receita.fazenda.gov.br/servicos/cnpjreva/Cnpjreva_Solicitacao.asp?cnpj=%s", cnpj)
+			if err := warmPage.Page.Navigate(url); err != nil {
+				e.browserMgr.releaseWarmPage(warmPage)
+				return nil, fmt.Errorf("failed to navigate warm page: %v", err)
+			}
+
+			if err := e.waitForPageReady(warmPage.Page, cnpj, correlationID); err != nil {
+				e.browserMgr.releaseWarmPage(warmPage)
+				return nil, fmt.Errorf("failed to wait for warm page ready: %v", err)
+			}
+
+			e.logger.DebugFields("Using warm page for CNPJ extraction", logger.Fields{
+				"cnpj":           cnpj,
+				"correlation_id": correlationID,
+			})
+
+			return pageCtx, nil
+		}
+	*/
+
+	// Cria nova página
 	browser := e.browserMgr.GetBrowser()
 	if browser == nil {
 		return nil, fmt.Errorf("no browser available")
 	}
-	defer e.browserMgr.ReleaseBrowser(browser)
 
 	page, err := browser.Page(proto.TargetCreateTarget{})
 	if err != nil {
+		e.browserMgr.ReleaseBrowser(browser)
 		return nil, fmt.Errorf("failed to create page: %v", err)
+	}
+
+	pageCtx := &PageContext{
+		Page:    page,
+		Browser: browser,
+		Manager: e.browserMgr,
 	}
 
 	page.EnableDomain(proto.NetworkEnable{})
@@ -382,27 +466,34 @@ func (e *CNPJExtractor) setupPage(cnpj, correlationID string) (*rod.Page, error)
 	go e.monitorConsole(page, cnpj, correlationID)
 
 	if err := e.configurePagePerformance(page); err != nil {
-		page.Close()
+		pageCtx.Close()
 		return nil, fmt.Errorf("failed to configure page: %v", err)
 	}
 
 	url := fmt.Sprintf("https://solucoes.receita.fazenda.gov.br/servicos/cnpjreva/Cnpjreva_Solicitacao.asp?cnpj=%s", cnpj)
 	if err := page.Navigate(url); err != nil {
-		page.Close()
+		pageCtx.Close()
 		return nil, fmt.Errorf("failed to navigate: %v", err)
 	}
 
-	if err := page.WaitLoad(); err != nil {
-		page.Close()
-		return nil, fmt.Errorf("failed to wait for load: %v", err)
+	// Aguarda página carregar e estar pronta para extração
+	if err := e.waitForPageReady(page, cnpj, correlationID); err != nil {
+		pageCtx.Close()
+		return nil, fmt.Errorf("failed to wait for page ready: %v", err)
 	}
 
-	return page, nil
+	e.logger.DebugFields("Created new page for CNPJ extraction", logger.Fields{
+		"cnpj":           cnpj,
+		"correlation_id": correlationID,
+	})
+
+	return pageCtx, nil
 }
 
-// submitFormWithRetry submete formulário com retry automático
+// submitFormWithRetry submete formulário com retry inteligente
 func (e *CNPJExtractor) submitFormWithRetry(page *rod.Page, cnpj, correlationID string) error {
-	maxRetries := 3
+	maxRetries := 2 // Reduzido para falhar mais rápido
+
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		e.logger.DebugFields("Form submission attempt", logger.Fields{
 			"attempt":        attempt,
@@ -411,47 +502,81 @@ func (e *CNPJExtractor) submitFormWithRetry(page *rod.Page, cnpj, correlationID 
 			"correlation_id": correlationID,
 		})
 
+		// Se não é a primeira tentativa, verifica se precisa de página limpa
+		if attempt > 1 {
+			// Verifica se há erro na página atual
+			if bodyEl, err := page.Element("body"); err == nil {
+				if bodyText, err := bodyEl.Text(); err == nil {
+					if strings.Contains(bodyText, "msgErroCaptcha") || strings.Contains(bodyText, "Erro na Consulta") {
+						e.logger.WarnFields("Error detected on retry, opening fresh page", logger.Fields{
+							"attempt": attempt,
+							"cnpj":    cnpj,
+						})
+
+						// Abre nova página limpa
+						baseURL := "https://solucoes.receita.fazenda.gov.br/servicos/cnpjreva/Cnpjreva_Solicitacao.asp"
+						freshURL := fmt.Sprintf("%s?cnpj=%s", baseURL, cnpj)
+
+						if newPage, err := page.Browser().Page(proto.TargetCreateTarget{URL: freshURL}); err == nil {
+							page.Close()
+							page = newPage
+
+							// Aguarda página carregar
+							page.WaitLoad()
+
+							// Aguarda página estar pronta
+							if err := e.waitForPageReady(page, cnpj, correlationID); err != nil {
+								e.logger.WarnFields("Fresh page not ready, continuing anyway", logger.Fields{
+									"error": err.Error(),
+								})
+							}
+
+							e.logger.InfoFields("Fresh page opened successfully", logger.Fields{
+								"attempt": attempt,
+							})
+						}
+					}
+				}
+			}
+		}
+
 		if err := e.submitForm(page, cnpj); err != nil {
 			if attempt == maxRetries {
 				return fmt.Errorf("form submission failed after %d attempts: %v", maxRetries, err)
 			}
 
+			// Backoff exponencial mais curto: 1s, 2s
+			backoffDuration := time.Duration(attempt) * time.Second
+
 			e.logger.WarnFields("Form submission failed, retrying", logger.Fields{
-				"error":          err.Error(),
-				"attempt":        attempt,
-				"cnpj":           cnpj,
-				"correlation_id": correlationID,
-				"error_type":     "form_validation",
+				"error":           err.Error(),
+				"attempt":         attempt,
+				"cnpj":            cnpj,
+				"correlation_id":  correlationID,
+				"backoff_seconds": backoffDuration.Seconds(),
+				"error_type":      "form_validation",
 			})
 
-			// Restart browser para limpar estado
-			newBrowser := e.restartBrowser()
-			if newBrowser == nil {
-				return fmt.Errorf("failed to restart browser")
+			// Aguarda antes de tentar novamente
+			time.Sleep(backoffDuration)
+
+			// Verifica se é erro específico de captcha
+			if strings.Contains(err.Error(), "captcha was rejected by server") {
+				e.logger.WarnFields("Captcha rejected by server - fresh page will be opened on next attempt", logger.Fields{
+					"attempt": attempt,
+					"cnpj":    cnpj,
+				})
+				// A nova página será aberta no início da próxima iteração
+			} else {
+				// Outros erros - tenta re-injetar token sem restart completo
+				if err := e.reinjectCaptchaToken(page); err != nil {
+					e.logger.WarnFields("Token re-injection failed, will retry form submission", logger.Fields{
+						"error": err.Error(),
+						"cnpj":  cnpj,
+					})
+				}
 			}
 
-			// Cria nova página
-			newPage, err := newBrowser.Page(proto.TargetCreateTarget{})
-			if err != nil {
-				return fmt.Errorf("failed to create new page: %v", err)
-			}
-
-			page.Close()
-			page = newPage
-
-			// Navega novamente
-			url := fmt.Sprintf("https://solucoes.receita.fazenda.gov.br/servicos/cnpjreva/Cnpjreva_Solicitacao.asp?cnpj=%s", cnpj)
-			if err := page.Navigate(url); err != nil {
-				return fmt.Errorf("failed to navigate after restart: %v", err)
-			}
-			if err := page.WaitLoad(); err != nil {
-				return fmt.Errorf("failed to wait for load after restart: %v", err)
-			}
-
-			// Resolve captcha novamente
-			if err := e.solveCaptcha(page); err != nil {
-				return fmt.Errorf("failed to solve captcha after restart: %v", err)
-			}
 			continue
 		}
 
@@ -460,6 +585,40 @@ func (e *CNPJExtractor) submitFormWithRetry(page *rod.Page, cnpj, correlationID 
 	}
 
 	return fmt.Errorf("unexpected end of retry loop")
+}
+
+// reinjectCaptchaToken tenta re-injetar o token do captcha sem restart completo
+func (e *CNPJExtractor) reinjectCaptchaToken(page *rod.Page) error {
+	// Verifica se ainda temos um token válido
+	tokenElement := page.MustElement("textarea[id^=\"h-captcha-response\"]")
+	if tokenElement == nil {
+		return fmt.Errorf("captcha token element not found")
+	}
+
+	currentToken, err := tokenElement.Text()
+	if err != nil || len(currentToken) < 100 {
+		// Token inválido ou vazio, precisa resolver novamente
+		return e.solveCaptcha(page)
+	}
+
+	// Token ainda válido, apenas re-injeta (usando var para compatibilidade)
+	script := fmt.Sprintf(`
+		var tokenElement = document.querySelector('textarea[id^="h-captcha-response"]');
+		if (tokenElement) {
+			tokenElement.value = '%s';
+			tokenElement.dispatchEvent(new Event('input', { bubbles: true }));
+		}
+	`, currentToken)
+
+	if _, err := page.Eval(script); err != nil {
+		return fmt.Errorf("failed to re-inject token: %v", err)
+	}
+
+	e.logger.DebugFields("Token re-injected successfully", logger.Fields{
+		"token_length": len(currentToken),
+	})
+
+	return nil
 }
 
 // finalizeCNPJData finaliza os dados extraídos
@@ -501,16 +660,122 @@ func (e *CNPJExtractor) configurePagePerformance(page *rod.Page) error {
 		// Log warning but continue
 	}
 
-	// Bloqueia recursos desnecessários para performance
-	router := page.HijackRequests()
-	for _, resource := range blockedResources {
-		router.MustAdd(resource, func(ctx *rod.Hijack) {
-			ctx.Response.Fail(proto.NetworkErrorReasonBlockedByClient)
-		})
-	}
-	go router.Run()
+	// Bloqueio de recursos removido para evitar problemas de renderização
+	// A página da Receita Federal precisa do CSS para funcionar corretamente
 
 	return nil
+}
+
+// waitForPageReady aguarda a página estar 100% pronta para extração
+func (e *CNPJExtractor) waitForPageReady(page *rod.Page, cnpj, correlationID string) error {
+	start := time.Now()
+	maxWait := 30 * time.Second             // Timeout máximo
+	checkInterval := 500 * time.Millisecond // Verifica a cada 500ms
+
+	e.logger.DebugFields("Waiting for page to be ready for extraction", logger.Fields{
+		"cnpj":           cnpj,
+		"correlation_id": correlationID,
+	})
+
+	for time.Since(start) < maxWait {
+		// Verifica se a página carregou completamente
+		result, err := page.Eval(`() => {
+			// Verifica se o documento está carregado
+			if (document.readyState !== 'complete') {
+				return { ready: false, reason: 'document_not_ready', state: document.readyState };
+			}
+
+			// Verifica se o formulário principal existe
+			const form = document.querySelector('form[name="Formulario"]') || document.querySelector('form');
+			if (!form) {
+				return { ready: false, reason: 'form_not_found' };
+			}
+
+			// Verifica se o campo CNPJ existe e está preenchido
+			const cnpjField = document.querySelector('input[name="cnpj"]') ||
+							 document.querySelector('input[type="text"]');
+			if (!cnpjField) {
+				return { ready: false, reason: 'cnpj_field_not_found' };
+			}
+
+			// Verifica se o captcha está presente
+			const captchaFrame = document.querySelector('iframe[src*="hcaptcha"]') ||
+								document.querySelector('.h-captcha') ||
+								document.querySelector('[data-sitekey]');
+			if (!captchaFrame) {
+				return { ready: false, reason: 'captcha_not_found' };
+			}
+
+			// Verifica se não há elementos ainda carregando
+			const loadingElements = document.querySelectorAll('[loading], .loading, .spinner');
+			if (loadingElements.length > 0) {
+				return { ready: false, reason: 'loading_elements_present', count: loadingElements.length };
+			}
+
+			// Verifica se há scripts ainda executando (aguarda um pouco)
+			if (typeof window.jQuery !== 'undefined' && window.jQuery.active > 0) {
+				return { ready: false, reason: 'jquery_active', active: window.jQuery.active };
+			}
+
+			// Tudo pronto!
+			return {
+				ready: true,
+				form_found: !!form,
+				cnpj_field_found: !!cnpjField,
+				captcha_found: !!captchaFrame,
+				document_state: document.readyState
+			};
+		}`)
+
+		if err != nil {
+			e.logger.WarnFields("Error checking page readiness", logger.Fields{
+				"error":   err.Error(),
+				"cnpj":    cnpj,
+				"elapsed": time.Since(start),
+			})
+			time.Sleep(checkInterval)
+			continue
+		}
+
+		// Converte resultado para map
+		resultMap := result.Value.Map()
+		isReady := resultMap["ready"].Bool()
+
+		if isReady {
+			elapsed := time.Since(start)
+			e.logger.InfoFields("Page is ready for extraction", logger.Fields{
+				"cnpj":             cnpj,
+				"correlation_id":   correlationID,
+				"ready_time":       elapsed,
+				"form_found":       resultMap["form_found"].Bool(),
+				"cnpj_field_found": resultMap["cnpj_field_found"].Bool(),
+				"captcha_found":    resultMap["captcha_found"].Bool(),
+				"document_state":   resultMap["document_state"].Str(),
+			})
+			return nil
+		}
+
+		// Log do motivo da não-prontidão
+		reason := resultMap["reason"].Str()
+		e.logger.DebugFields("Page not ready yet", logger.Fields{
+			"reason":  reason,
+			"cnpj":    cnpj,
+			"elapsed": time.Since(start),
+		})
+
+		time.Sleep(checkInterval)
+	}
+
+	// Timeout atingido
+	elapsed := time.Since(start)
+	e.logger.WarnFields("Page readiness timeout", logger.Fields{
+		"cnpj":           cnpj,
+		"correlation_id": correlationID,
+		"timeout":        maxWait,
+		"elapsed":        elapsed,
+	})
+
+	return fmt.Errorf("page not ready after %v", elapsed)
 }
 
 // injectCaptchaToken injeta token de captcha de forma robusta
@@ -1094,48 +1359,48 @@ func (e *CNPJExtractor) submitForm(page *rod.Page, cnpj string) error {
 				"ms_after_click": time.Since(clickStart).Milliseconds(),
 			})
 
-			// Se o token foi limpo, tenta re-injeção agressiva
+			// Se o token foi limpo, significa que foi invalidado pelo hCaptcha
 			if checkData["length"].Int() == 0 && e.lastCaptchaToken != "" {
-				e.logger.WarnFields("Token cleared after click, attempting aggressive re-injection", logger.Fields{
+				e.logger.WarnFields("Token cleared after click - token was consumed/invalidated", logger.Fields{
+					"attempt": attempt,
+					"reason":  "hcaptcha_token_consumed",
+				})
+
+				// Token invalidado - erro será detectado na próxima iteração
+				e.logger.WarnFields("Token invalidated - error will be handled on next attempt", logger.Fields{
 					"attempt": attempt,
 				})
 
-				// Re-injeção com JavaScript direto para ser mais rápido
-				reInjectResult, reInjectErr := page.Eval(`(token) => {
-					const selectors = [
-						'textarea[id^="h-captcha-response"]',
-						'textarea[name="h-captcha-response"]',
-						'input[name="h-captcha-response"]'
-					];
-
-					for (const selector of selectors) {
-						const el = document.querySelector(selector);
-						if (el) {
-							el.value = token;
-							el.dispatchEvent(new Event('input', { bubbles: true }));
-							el.dispatchEvent(new Event('change', { bubbles: true }));
-							return { success: true, selector: selector, length: el.value.length };
-						}
-					}
-					return { success: false, error: 'no_element_found' };
-				}`, e.lastCaptchaToken)
-
-				if reInjectErr != nil {
-					e.logger.ErrorFields("Aggressive re-injection failed", logger.Fields{
-						"attempt": attempt,
-						"error":   reInjectErr.Error(),
+				// Verifica se já chegamos na página de comprovante
+				currentURL := page.MustInfo().URL
+				if strings.Contains(currentURL, "Cnpjreva_Comprovante.asp") {
+					e.logger.InfoFields("Already on comprovante page, stopping token verification", logger.Fields{
+						"attempt":     attempt,
+						"current_url": currentURL,
 					})
-				} else {
-					result := reInjectResult.Value.Map()
-					if result["success"].Bool() {
-						e.logger.InfoFields("Aggressive re-injection successful", logger.Fields{
-							"attempt":      attempt,
-							"selector":     result["selector"].Str(),
-							"token_length": result["length"].Int(),
-						})
-						break // Sucesso, para de tentar
-					}
+					break // Para de tentar resolver captcha, já estamos na página de resultado
 				}
+
+				// Token invalidado - precisa resolver novo captcha
+				e.logger.InfoFields("Resolving new captcha due to token invalidation", logger.Fields{
+					"attempt": attempt,
+				})
+
+				// Resolve novo captcha
+				if err := e.solveCaptcha(page); err != nil {
+					e.logger.ErrorFields("Failed to resolve new captcha after token invalidation", logger.Fields{
+						"attempt": attempt,
+						"error":   err.Error(),
+					})
+					// Continua tentando com o token antigo como fallback
+					continue
+				}
+
+				e.logger.InfoFields("New captcha resolved successfully after token invalidation", logger.Fields{
+					"attempt":          attempt,
+					"new_token_length": len(e.lastCaptchaToken),
+				})
+				break // Novo captcha resolvido, para de tentar
 			} else if checkData["length"].Int() > 0 {
 				// Token ainda presente, não precisa re-injetar
 				e.logger.InfoFields("Token still present, no re-injection needed", logger.Fields{
@@ -1225,20 +1490,38 @@ func (e *CNPJExtractor) submitForm(page *rod.Page, cnpj string) error {
 	// Primeiro, verifica se há erro na página (melhorada para evitar falsos positivos)
 	if errorElement, errorErr := page.Element("*"); errorErr == nil {
 		if pageText, textErr := errorElement.Text(); textErr == nil {
-			// Verifica se é uma página de sucesso (comprovante) - PRIORIDADE
-			if strings.Contains(pageText, "COMPROVANTE DE INSCRIÇÃO") ||
-				strings.Contains(pageText, "Situação Cadastral") ||
-				strings.Contains(currentURL, "Cnpjreva_Comprovante.asp") {
-				e.logger.InfoFields("Success page detected - comprovante found", logger.Fields{
+			// Verifica se é uma página de sucesso (comprovante) - VALIDAÇÃO RIGOROSA
+			isRealComprovante := strings.Contains(currentURL, "Cnpjreva_Comprovante.asp") &&
+				(strings.Contains(pageText, "COMPROVANTE DE INSCRIÇÃO") ||
+					strings.Contains(pageText, "Situação Cadastral") ||
+					strings.Contains(pageText, "Razão Social"))
+
+			// Verifica se é página informativa (não é erro)
+			isInformativePage := strings.Contains(pageText, "Esta página tem como objetivo") ||
+				strings.Contains(pageText, "Emissão de Comprovante") ||
+				strings.Contains(pageText, "Cidadão")
+
+			// Verifica se há erro específico de captcha na página
+			hasCaptchaError := strings.Contains(pageText, "msgErroCaptcha") ||
+				(strings.Contains(pageText, "Erro na Consulta") && strings.Contains(pageText, "Esclarecimentos adicionais"))
+
+			if isRealComprovante {
+				e.logger.InfoFields("Real comprovante page detected", logger.Fields{
 					"current_url": currentURL,
-					"page_type":   "comprovante_success",
+					"page_type":   "real_comprovante",
 				})
-				// É uma página de sucesso, continua o processamento
-			} else if strings.Contains(pageText, "Erro na Consulta") ||
-				strings.Contains(pageText, "Campos não preenchidos") ||
+				// É uma página de sucesso real, continua o processamento
+			} else if hasCaptchaError {
+				// Erro específico de captcha - precisa resolver novo
+				e.logger.WarnFields("Captcha error detected in page content", logger.Fields{
+					"current_url": currentURL,
+					"error_type":  "captcha_rejected_by_server",
+				})
+				return fmt.Errorf("captcha was rejected by server - need to resolve new captcha")
+			} else if !isInformativePage && (strings.Contains(pageText, "Campos não preenchidos") ||
 				strings.Contains(pageText, "CNPJ Inválido") ||
 				strings.Contains(pageText, "Captcha inválido") ||
-				strings.Contains(pageText, "Dados incorretos") {
+				strings.Contains(pageText, "Dados incorretos")) {
 				// Verifica estado do token no momento do erro
 				tokenInfo := e.getTokenDebugInfo(page)
 
@@ -1451,6 +1734,19 @@ func (e *CNPJExtractor) validateCaptchaToken(page *rod.Page) error {
 		tokenInfo = append(tokenInfo, fmt.Sprintf("%s: length=%d", selector, len(valueStr)))
 
 		if len(valueStr) > 50 { // tokens hCaptcha são longos
+			// Validação adicional: verifica se o token não é apenas espaços ou caracteres inválidos
+			trimmedToken := strings.TrimSpace(valueStr)
+			if len(trimmedToken) < 50 {
+				tokenInfo = append(tokenInfo, fmt.Sprintf("%s: token trimmed too short (%d)", selector, len(trimmedToken)))
+				continue
+			}
+
+			// Verifica se o token contém caracteres válidos (base64-like)
+			if !strings.Contains(trimmedToken, ".") || len(strings.Split(trimmedToken, ".")) < 2 {
+				tokenInfo = append(tokenInfo, fmt.Sprintf("%s: token format invalid", selector))
+				continue
+			}
+
 			e.logger.DebugFields("Captcha token validated successfully", logger.Fields{
 				"selector":       selector,
 				"token_length":   len(valueStr),
@@ -1577,6 +1873,28 @@ func (e *CNPJExtractor) waitForFormReady(page *rod.Page, cnpj string) error {
 			continue
 		}
 
+		// Verificação final: detecta APENAS erros reais de captcha na página
+		pageText, _ := page.MustElement("body").Text()
+
+		// Verifica se há erros específicos (não confundir com texto informativo)
+		hasRealError := strings.Contains(pageText, "Erro na Consulta") ||
+			strings.Contains(pageText, "Esclarecimentos adicionais") ||
+			strings.Contains(pageText, "Captcha inválido") ||
+			strings.Contains(pageText, "Token inválido") ||
+			(strings.Contains(pageText, "hCaptcha") && strings.Contains(pageText, "erro"))
+
+		// IMPORTANTE: Não considerar texto informativo como erro
+		isInformativePage := strings.Contains(pageText, "Esta página tem como objetivo") ||
+			strings.Contains(pageText, "Emissão de Comprovante") ||
+			strings.Contains(pageText, "Cidadão")
+
+		if hasRealError && !isInformativePage {
+			e.logger.ErrorFields("Real captcha error detected on page", logger.Fields{
+				"page_content_preview": pageText[:min(200, len(pageText))],
+			})
+			return fmt.Errorf("captcha error detected on page")
+		}
+
 		// Se chegou aqui, o formulário está pronto
 		e.logger.InfoFields("Form is ready for submission", logger.Fields{
 			"attempt":        attempt,
@@ -1589,21 +1907,6 @@ func (e *CNPJExtractor) waitForFormReady(page *rod.Page, cnpj string) error {
 	}
 
 	return fmt.Errorf("form not ready after %d attempts", maxAttempts)
-}
-
-// restartBrowser força o restart do navegador para limpar estado corrompido
-func (e *CNPJExtractor) restartBrowser() *rod.Browser {
-	e.logger.Info("Restarting browser to clear corrupted state")
-
-	// Solicita um novo navegador do pool
-	newBrowser := e.browserMgr.GetBrowser()
-	if newBrowser == nil {
-		e.logger.Error("Failed to get new browser from pool")
-		return nil
-	}
-
-	e.logger.Info("Browser restarted successfully")
-	return newBrowser
 }
 
 // saveDebugInfo salva screenshot e HTML para análise
@@ -1694,50 +1997,361 @@ func (e *CNPJExtractor) extractData(page *rod.Page) (data *types.CNPJData, err e
 		"current_url": currentURL,
 	})
 
-	// Obtém todo o texto da página com novo contexto
-	e.logger.Debug("Getting page body element")
-	bodyElement, err := page.Context(ctx).Element("body")
+	// Extração usando seletores específicos baseados na estrutura real
+	e.logger.Debug("Starting specific data extraction using CSS selectors")
+	extractStart := time.Now()
+
+	// Verifica se a página principal existe
+	principalDiv, err := page.Context(ctx).Element("div#principal")
 	if err != nil {
-		e.logger.ErrorFields("Failed to find body element", logger.Fields{
+		e.logger.ErrorFields("Principal div not found, falling back to text extraction", logger.Fields{
 			"error": err.Error(),
 		})
-		return nil, fmt.Errorf("failed to find body element: %v", err)
+		return e.extractDataFallback(page, ctx)
 	}
 
-	e.logger.Debug("Extracting text from page body")
-	textStart := time.Now()
+	// Extrai dados usando seletores específicos
+	data = e.createEmptyCNPJData()
 
-	// Aguarda um pouco para garantir que a página carregou completamente
-	time.Sleep(500 * time.Millisecond)
-
-	text, err := bodyElement.Text()
-	if err != nil {
-		e.logger.ErrorFields("Failed to get page text", logger.Fields{
-			"error": err.Error(),
-		})
-		return nil, fmt.Errorf("failed to get page text: %v", err)
+	// Extrai CNPJ usando estrutura real da página
+	if cnpjText, err := e.extractFieldByLabel(principalDiv, "NÚMERO DE INSCRIÇÃO"); err == nil {
+		data.CNPJ.Numero = e.extractCNPJNumber(cnpjText)
+		data.CNPJ.Tipo = "MATRIZ" // Sempre MATRIZ baseado na estrutura
 	}
 
-	e.logger.DebugFields("Page text extracted", logger.Fields{
-		"text_length":      len(text),
-		"extract_duration": time.Since(textStart).String(),
-	})
+	// Extrai Data de Abertura
+	if dataText, err := e.extractFieldByLabel(principalDiv, "DATA DE ABERTURA"); err == nil {
+		data.CNPJ.DataAbertura = e.extractDate(dataText)
+	}
 
-	// Usa o mesmo parser do Python (adaptado para Go)
-	e.logger.Debug("Starting text parsing")
-	parseStart := time.Now()
-	data = e.parseTextData(text)
+	// Extrai Nome Empresarial
+	if nomeText, err := e.extractFieldByLabel(principalDiv, "NOME EMPRESARIAL"); err == nil {
+		data.Empresa.RazaoSocial = e.extractCompanyName(nomeText)
+	}
+
+	// Extrai Nome Fantasia
+	if fantasiaText, err := e.extractFieldByLabel(principalDiv, "TÍTULO DO ESTABELECIMENTO"); err == nil {
+		data.Empresa.NomeFantasia = e.extractFantasyName(fantasiaText)
+	}
+
+	// Extrai Porte
+	if porteText, err := e.extractFieldByLabel(principalDiv, "PORTE"); err == nil {
+		data.Empresa.Porte = e.extractPorte(porteText)
+	}
+
+	// Extrai Situação Cadastral
+	if situacaoText, err := e.extractFieldByLabel(principalDiv, "SITUAÇÃO CADASTRAL"); err == nil {
+		data.Situacao.Cadastral = e.extractSituation(situacaoText)
+	}
+
+	// Extrai Data da Situação
+	if dataSitText, err := e.extractFieldByLabel(principalDiv, "DATA DA SITUAÇÃO CADASTRAL"); err == nil {
+		data.Situacao.DataSituacao = e.extractDate(dataSitText)
+	}
+
+	// Extrai Atividade Principal
+	if atividadeText, err := e.extractFieldByLabel(principalDiv, "CÓDIGO E DESCRIÇÃO DA ATIVIDADE ECONÔMICA PRINCIPAL"); err == nil {
+		codigo, descricao := e.extractActivity(atividadeText)
+		data.Atividades.Principal.Codigo = codigo
+		data.Atividades.Principal.Descricao = descricao
+	}
+
+	// Extrai dados de endereço
+	e.extractAddressData(principalDiv, data)
+
+	// Extrai dados de contato
+	e.extractContactData(principalDiv, data)
 
 	totalDuration := time.Since(start)
 	e.logger.InfoFields("Data extraction completed", logger.Fields{
-		"total_duration": totalDuration.String(),
-		"parse_duration": time.Since(parseStart).String(),
-		"cnpj":           data.CNPJ.Numero,
-		"empresa":        data.Empresa.RazaoSocial,
-		"situacao":       data.Situacao.Cadastral,
+		"total_duration":   totalDuration.String(),
+		"extract_duration": time.Since(extractStart).String(),
+		"cnpj":             data.CNPJ.Numero,
+		"empresa":          data.Empresa.RazaoSocial,
+		"situacao":         data.Situacao.Cadastral,
 	})
 
 	return data, nil
+}
+
+// extractFieldByLabel extrai campo baseado na estrutura real da página
+func (e *CNPJExtractor) extractFieldByLabel(principalDiv *rod.Element, label string) (string, error) {
+	// A estrutura real usa tabelas com font tags contendo o label
+	// Procura por font tag que contém o label
+	fontElements, err := principalDiv.Elements("font")
+	if err != nil {
+		return "", fmt.Errorf("failed to find font elements: %v", err)
+	}
+
+	// Normaliza o label para busca (remove acentos e caracteres especiais)
+	normalizedLabel := e.normalizeText(label)
+
+	for _, fontEl := range fontElements {
+		text, err := fontEl.Text()
+		if err != nil {
+			continue
+		}
+
+		// Normaliza o texto para comparação
+		normalizedText := e.normalizeText(text)
+
+		// Se encontrou o label, procura o próximo elemento bold na mesma célula
+		if strings.Contains(normalizedText, normalizedLabel) {
+			// Procura o elemento pai (td)
+			parent := fontEl
+			for i := 0; i < 5; i++ { // Máximo 5 níveis para cima
+				if parent == nil {
+					break
+				}
+
+				// Verifica se é uma célula (td)
+				if tagName, err := parent.Eval("() => this.tagName.toLowerCase()"); err == nil {
+					if tagName.Value.Str() == "td" {
+						// Procura elementos bold (b) dentro desta célula
+						boldElements, err := parent.Elements("b")
+						if err == nil && len(boldElements) > 0 {
+							// Para cada elemento bold, verifica se não é o próprio label
+							for _, boldEl := range boldElements {
+								if boldText, err := boldEl.Text(); err == nil {
+									boldText = e.cleanExtractedText(boldText)
+									normalizedBoldText := e.normalizeText(boldText)
+
+									// Ignora se for o próprio label ou título
+									if !strings.Contains(normalizedBoldText, normalizedLabel) &&
+										!strings.Contains(normalizedBoldText, "COMPROVANTE DE INSCRICAO") &&
+										boldText != "" {
+										return boldText, nil
+									}
+								}
+							}
+						}
+						break
+					}
+				}
+
+				// Sobe um nível
+				if parentEl, err := parent.Parent(); err == nil {
+					parent = parentEl
+				} else {
+					break
+				}
+			}
+		}
+	}
+
+	return "", fmt.Errorf("field with label '%s' not found", label)
+}
+
+// normalizeText remove acentos e caracteres especiais para comparação
+func (e *CNPJExtractor) normalizeText(text string) string {
+	// Remove acentos e caracteres especiais comuns
+	replacements := map[string]string{
+		"ç": "c", "Ç": "C",
+		"á": "a", "à": "a", "ã": "a", "â": "a", "Á": "A", "À": "A", "Ã": "A", "Â": "A",
+		"é": "e", "ê": "e", "É": "E", "Ê": "E",
+		"í": "i", "Í": "I",
+		"ó": "o", "ô": "o", "õ": "o", "Ó": "O", "Ô": "O", "Õ": "O",
+		"ú": "u", "Ú": "U",
+		"ñ": "n", "Ñ": "N",
+		"ü": "u", "Ü": "U",
+	}
+
+	normalized := text
+	for old, new := range replacements {
+		normalized = strings.ReplaceAll(normalized, old, new)
+	}
+
+	return strings.ToUpper(normalized)
+}
+
+// cleanExtractedText limpa o texto extraído removendo espaços extras
+func (e *CNPJExtractor) cleanExtractedText(text string) string {
+	// Remove espaços no início e fim
+	cleaned := strings.TrimSpace(text)
+
+	// Remove espaços múltiplos
+	re := regexp.MustCompile(`\s+`)
+	cleaned = re.ReplaceAllString(cleaned, " ")
+
+	// Remove espaços antes e depois de caracteres especiais
+	cleaned = strings.ReplaceAll(cleaned, " .", ".")
+	cleaned = strings.ReplaceAll(cleaned, " /", "/")
+	cleaned = strings.ReplaceAll(cleaned, "/ ", "/")
+	cleaned = strings.ReplaceAll(cleaned, " -", "-")
+	cleaned = strings.ReplaceAll(cleaned, "- ", "-")
+
+	return cleaned
+}
+
+// extractDataFallback usa o método antigo de extração por texto
+func (e *CNPJExtractor) extractDataFallback(page *rod.Page, ctx context.Context) (*types.CNPJData, error) {
+	e.logger.Debug("Using fallback text extraction method")
+
+	bodyElement, err := page.Context(ctx).Element("body")
+	if err != nil {
+		return nil, fmt.Errorf("failed to find body element: %v", err)
+	}
+
+	text, err := bodyElement.Text()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get page text: %v", err)
+	}
+
+	return e.parseTextData(text), nil
+}
+
+// extractTextByContent encontra texto próximo a um label específico
+func (e *CNPJExtractor) extractTextByContent(element *rod.Element, label string) (string, error) {
+	// Busca por elementos que contenham o label
+	script := fmt.Sprintf(`
+		const element = arguments[0];
+		const label = "%s";
+		const walker = document.createTreeWalker(
+			element,
+			NodeFilter.SHOW_TEXT,
+			null,
+			false
+		);
+
+		let foundLabel = false;
+		let result = "";
+		let node;
+
+		while (node = walker.nextNode()) {
+			const text = node.textContent.trim();
+			if (text.includes(label)) {
+				foundLabel = true;
+				continue;
+			}
+			if (foundLabel && text && !text.includes("font") && text.length > 1) {
+				result = text;
+				break;
+			}
+		}
+
+		return result;
+	`, label)
+
+	result, err := element.Eval(script)
+	if err != nil {
+		return "", err
+	}
+
+	return result.Value.Str(), nil
+}
+
+// extractCNPJNumber extrai o número do CNPJ do texto
+func (e *CNPJExtractor) extractCNPJNumber(text string) string {
+	// Procura por padrão XX.XXX.XXX/XXXX-XX
+	re := regexp.MustCompile(`\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}`)
+	if match := re.FindString(text); match != "" {
+		return match
+	}
+	return ""
+}
+
+// extractDate extrai data no formato DD/MM/YYYY
+func (e *CNPJExtractor) extractDate(text string) string {
+	re := regexp.MustCompile(`\d{2}/\d{2}/\d{4}`)
+	if match := re.FindString(text); match != "" {
+		return match
+	}
+	return ""
+}
+
+// extractCompanyName extrai o nome da empresa
+func (e *CNPJExtractor) extractCompanyName(text string) string {
+	// Remove espaços extras e retorna o texto limpo
+	return strings.TrimSpace(text)
+}
+
+// extractFantasyName extrai o nome fantasia
+func (e *CNPJExtractor) extractFantasyName(text string) string {
+	return strings.TrimSpace(text)
+}
+
+// extractPorte extrai o porte da empresa
+func (e *CNPJExtractor) extractPorte(text string) string {
+	text = strings.TrimSpace(text)
+	// Mapeia abreviações comuns
+	switch text {
+	case "ME":
+		return "MICROEMPRESA"
+	case "EPP":
+		return "EMPRESA DE PEQUENO PORTE"
+	default:
+		return text
+	}
+}
+
+// extractSituation extrai a situação cadastral
+func (e *CNPJExtractor) extractSituation(text string) string {
+	return strings.TrimSpace(text)
+}
+
+// extractActivity extrai código e descrição da atividade
+func (e *CNPJExtractor) extractActivity(text string) (string, string) {
+	// Procura por padrão XX.XX-X-XX - Descrição
+	re := regexp.MustCompile(`(\d{2}\.\d{2}-\d-\d{2})\s*-\s*(.+)`)
+	if matches := re.FindStringSubmatch(text); len(matches) >= 3 {
+		return strings.TrimSpace(matches[1]), strings.TrimSpace(matches[2])
+	}
+	return "", strings.TrimSpace(text)
+}
+
+// extractAddressData extrai dados de endereço
+func (e *CNPJExtractor) extractAddressData(element *rod.Element, data *types.CNPJData) {
+	// Extrai Logradouro
+	if logText, err := e.extractTextByContent(element, "LOGRADOURO"); err == nil {
+		data.Endereco.Logradouro = strings.TrimSpace(logText)
+	}
+
+	// Extrai Número
+	if numText, err := e.extractTextByContent(element, "NÚMERO"); err == nil {
+		data.Endereco.Numero = strings.TrimSpace(numText)
+	}
+
+	// Extrai CEP
+	if cepText, err := e.extractTextByContent(element, "CEP"); err == nil {
+		data.Endereco.CEP = e.extractCEP(cepText)
+	}
+
+	// Extrai Bairro
+	if bairroText, err := e.extractTextByContent(element, "BAIRRO/DISTRITO"); err == nil {
+		data.Endereco.Bairro = strings.TrimSpace(bairroText)
+	}
+
+	// Extrai Município
+	if municText, err := e.extractTextByContent(element, "MUNICÍPIO"); err == nil {
+		data.Endereco.Municipio = strings.TrimSpace(municText)
+	}
+
+	// Extrai UF
+	if ufText, err := e.extractTextByContent(element, "UF"); err == nil {
+		data.Endereco.UF = strings.TrimSpace(ufText)
+	}
+}
+
+// extractContactData extrai dados de contato
+func (e *CNPJExtractor) extractContactData(element *rod.Element, data *types.CNPJData) {
+	// Extrai Email
+	if emailText, err := e.extractTextByContent(element, "ENDEREÇO ELETRÔNICO"); err == nil {
+		data.Contato.Email = strings.TrimSpace(emailText)
+	}
+
+	// Extrai Telefone
+	if telText, err := e.extractTextByContent(element, "TELEFONE"); err == nil {
+		data.Contato.Telefone = strings.TrimSpace(telText)
+	}
+}
+
+// extractCEP extrai CEP no formato XX.XXX-XXX
+func (e *CNPJExtractor) extractCEP(text string) string {
+	re := regexp.MustCompile(`\d{2}\.\d{3}-\d{3}`)
+	if match := re.FindString(text); match != "" {
+		return match
+	}
+	return strings.TrimSpace(text)
 }
 
 // parseTextData converte texto da página em estrutura de dados
@@ -1918,6 +2532,11 @@ func (e *CNPJExtractor) clearPreExistingErrors(page *rod.Page) error {
 			"errors": errorData["errors"].String(),
 		})
 
+		// Verifica se é erro específico de captcha
+		errorsStr := errorData["errors"].String()
+		isCaptchaError := strings.Contains(errorsStr, "msgErroCaptcha") ||
+			strings.Contains(errorsStr, "Esclarecimentos adicionais")
+
 		// Tenta limpar os erros
 		_, clearErr := page.Eval(`() => {
 			// Esconde msgErroCaptcha
@@ -1942,6 +2561,20 @@ func (e *CNPJExtractor) clearPreExistingErrors(page *rod.Page) error {
 		}
 
 		e.logger.Info("Pre-existing errors cleared successfully")
+
+		// Se é erro de captcha, resolve um novo
+		if isCaptchaError {
+			e.logger.WarnFields("Captcha error detected, resolving new captcha", logger.Fields{
+				"error_type": "captcha_validation_failed",
+			})
+
+			// Resolve novo captcha
+			if err := e.solveCaptcha(page); err != nil {
+				return fmt.Errorf("failed to resolve new captcha after error: %v", err)
+			}
+
+			e.logger.Info("New captcha resolved successfully after error")
+		}
 	}
 
 	return nil
@@ -2006,13 +2639,29 @@ func (e *CNPJExtractor) monitorConsole(page *rod.Page, cnpj, correlationID strin
 				logLevel = "debug"
 			}
 
-			logger.GetGlobalLogger().WithComponent("console").InfoFields("Browser console", logger.Fields{
+			// Log com mais detalhes e filtragem de mensagens importantes
+			fields := logger.Fields{
 				"cnpj":           cnpj,
 				"correlation_id": correlationID,
 				"level":          logLevel,
 				"message":        message,
 				"type":           string(e.Type),
-			})
+			}
+
+			// Detecta mensagens importantes relacionadas ao hCaptcha
+			isImportant := strings.Contains(message, "hcaptcha") ||
+				strings.Contains(message, "captcha") ||
+				strings.Contains(message, "error") ||
+				strings.Contains(message, "failed") ||
+				strings.Contains(message, "token") ||
+				logLevel == "error"
+
+			if isImportant {
+				fields["important"] = true
+				logger.GetGlobalLogger().WithComponent("console").WarnFields("Important browser console message", fields)
+			} else {
+				logger.GetGlobalLogger().WithComponent("console").InfoFields("Browser console", fields)
+			}
 		}
 	})()
 
