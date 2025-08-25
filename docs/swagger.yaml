@@ -1,0 +1,311 @@
+basePath: /
+definitions:
+  models.APIResponse:
+    description: Estrutura padrão de resposta para todos os endpoints
+    properties:
+      data:
+        description: Dados retornados pela operação
+      error:
+        description: |-
+          Mensagem de erro (apenas em caso de falha)
+          @example "CNPJ inválido"
+        example: CNPJ inválido
+        type: string
+      message:
+        description: |-
+          Mensagem explicativa da operação (apenas em caso de sucesso)
+          @example "Consulta realizada com sucesso"
+        example: Consulta realizada com sucesso
+        type: string
+      success:
+        description: |-
+          Indica se a operação foi bem-sucedida
+          @example true
+        example: true
+        type: boolean
+      timestamp:
+        description: |-
+          Timestamp da resposta em formato ISO 8601
+          @example "2025-08-25T17:25:30.468715-03:00"
+        example: "2025-08-25T17:25:30.468715-03:00"
+        type: string
+    type: object
+  models.CNAEData:
+    properties:
+      codigo:
+        type: string
+      descricao:
+        type: string
+    type: object
+  models.EnderecoData:
+    properties:
+      bairro:
+        type: string
+      cep:
+        type: string
+      complemento:
+        type: string
+      ddd:
+        type: string
+      logradouro:
+        type: string
+      municipio:
+        type: string
+      numero:
+        type: string
+      telefone:
+        type: string
+      uf:
+        type: string
+    type: object
+  models.HealthResponse:
+    properties:
+      service:
+        type: string
+      status:
+        type: string
+      uptime:
+        type: string
+      version:
+        type: string
+    type: object
+  models.ObrigacoesData:
+    properties:
+      cte_a_partir_de:
+        type: string
+      edf_a_partir_de:
+        type: string
+      nfe_a_partir_de:
+        type: string
+    type: object
+  models.SintegraData:
+    properties:
+      cgc:
+        type: string
+      cnae_principal:
+        type: string
+      cnae_secundarios:
+        items:
+          $ref: '#/definitions/models.CNAEData'
+        type: array
+      data_consulta:
+        type: string
+      data_situacao_cadastral:
+        type: string
+      endereco:
+        $ref: '#/definitions/models.EnderecoData'
+      inscricao_estadual:
+        type: string
+      numero_consulta:
+        type: string
+      obrigacoes:
+        $ref: '#/definitions/models.ObrigacoesData'
+      observacao:
+        type: string
+      razao_social:
+        type: string
+      regime_apuracao:
+        type: string
+      situacao_cadastral:
+        type: string
+    type: object
+  models.SintegraRequest:
+    description: Estrutura de dados para requisição de consulta CNPJ
+    properties:
+      cnpj:
+        description: |-
+          CNPJ da empresa para consulta (apenas números, 14 dígitos)
+          @example "38139407000177"
+        example: "38139407000177"
+        type: string
+    required:
+    - cnpj
+    type: object
+  models.SintegraResponse:
+    description: Dados estruturados retornados pela consulta no Sintegra MA
+    properties:
+      captcha_solved:
+        description: |-
+          Indica se o CAPTCHA foi resolvido automaticamente
+          @example true
+        example: true
+        type: boolean
+      cnpj:
+        description: |-
+          CNPJ consultado
+          @example "38139407000177"
+        example: "38139407000177"
+        type: string
+      data:
+        allOf:
+        - $ref: '#/definitions/models.SintegraData'
+        description: Dados estruturados da empresa
+      execution_time:
+        description: |-
+          Tempo de execução da consulta (formato: "45s" ou "2m30s")
+          @example "45s"
+        example: 45s
+        type: string
+      status:
+        description: |-
+          Status da consulta (sucesso, erro_captcha, erro_extracao)
+          @example "sucesso"
+        example: sucesso
+        type: string
+      timestamp:
+        description: |-
+          Timestamp da consulta
+          @example "2025-08-25T17:25:30.468715-03:00"
+        example: "2025-08-25T17:25:30.468715-03:00"
+        type: string
+      url:
+        description: |-
+          URL da página de resultado no Sintegra
+          @example "https://sistemas1.sefaz.ma.gov.br/sintegra/..."
+        example: https://sistemas1.sefaz.ma.gov.br/sintegra/...
+        type: string
+    type: object
+host: localhost:3000
+info:
+  contact:
+    email: contato@nexconsult.com
+    name: NexConsult
+    url: https://nexconsult.com
+  description: API REST para consulta automatizada no Sintegra do Maranhão com resolução
+    automática de reCAPTCHA v2 e extração estruturada de dados.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: NexConsult Sintegra MA API
+  version: 1.0.0
+paths:
+  /:
+    get:
+      description: Exibe informações básicas sobre a API, endpoints disponíveis e
+        exemplos de uso
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Informações da API
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      summary: API Information
+      tags:
+      - System
+  /api/v1/sintegra/consultar:
+    post:
+      consumes:
+      - application/json
+      description: Executa consulta automatizada no Sintegra MA com resolução de CAPTCHA
+        e extração de dados estruturados
+      parameters:
+      - description: Dados do CNPJ para consulta
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.SintegraRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Consulta realizada com sucesso
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.SintegraResponse'
+              type: object
+        "400":
+          description: Requisição inválida
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "429":
+          description: Rate limit excedido
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "500":
+          description: Erro interno do servidor
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      summary: Consultar CNPJ no Sintegra MA
+      tags:
+      - Sintegra
+  /api/v1/sintegra/consultar/{cnpj}:
+    get:
+      description: Executa consulta automatizada no Sintegra MA passando CNPJ diretamente
+        na URL
+      parameters:
+      - description: CNPJ (14 dígitos numéricos)
+        in: path
+        maxLength: 14
+        minLength: 14
+        name: cnpj
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Consulta realizada com sucesso
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.SintegraResponse'
+              type: object
+        "400":
+          description: CNPJ inválido ou não informado
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "429":
+          description: Rate limit excedido
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "500":
+          description: Erro interno do servidor
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      summary: Consultar CNPJ via URL
+      tags:
+      - Sintegra
+  /docs:
+    get:
+      description: Documentação detalhada dos endpoints disponíveis, formatos de resposta
+        e exemplos
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Documentação completa da API
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      summary: API Documentation
+      tags:
+      - System
+  /health:
+    get:
+      description: Verifica o status de saúde da API, tempo de atividade e versão
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: API funcionando corretamente
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.HealthResponse'
+              type: object
+      summary: Health Check
+      tags:
+      - System
+schemes:
+- http
+- https
+swagger: "2.0"

@@ -1,0 +1,433 @@
+{
+    "schemes": [
+        "http",
+        "https"
+    ],
+    "swagger": "2.0",
+    "info": {
+        "description": "API REST para consulta automatizada no Sintegra do Maranhão com resolução automática de reCAPTCHA v2 e extração estruturada de dados.",
+        "title": "NexConsult Sintegra MA API",
+        "termsOfService": "http://swagger.io/terms/",
+        "contact": {
+            "name": "NexConsult",
+            "url": "https://nexconsult.com",
+            "email": "contato@nexconsult.com"
+        },
+        "license": {
+            "name": "Apache 2.0",
+            "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
+        },
+        "version": "1.0.0"
+    },
+    "host": "localhost:3000",
+    "basePath": "/",
+    "paths": {
+        "/": {
+            "get": {
+                "description": "Exibe informações básicas sobre a API, endpoints disponíveis e exemplos de uso",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "API Information",
+                "responses": {
+                    "200": {
+                        "description": "Informações da API",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/sintegra/consultar": {
+            "post": {
+                "description": "Executa consulta automatizada no Sintegra MA com resolução de CAPTCHA e extração de dados estruturados",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sintegra"
+                ],
+                "summary": "Consultar CNPJ no Sintegra MA",
+                "parameters": [
+                    {
+                        "description": "Dados do CNPJ para consulta",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.SintegraRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Consulta realizada com sucesso",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.SintegraResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Requisição inválida",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit excedido",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Erro interno do servidor",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/sintegra/consultar/{cnpj}": {
+            "get": {
+                "description": "Executa consulta automatizada no Sintegra MA passando CNPJ diretamente na URL",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sintegra"
+                ],
+                "summary": "Consultar CNPJ via URL",
+                "parameters": [
+                    {
+                        "maxLength": 14,
+                        "minLength": 14,
+                        "type": "string",
+                        "description": "CNPJ (14 dígitos numéricos)",
+                        "name": "cnpj",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Consulta realizada com sucesso",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.SintegraResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "CNPJ inválido ou não informado",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit excedido",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Erro interno do servidor",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/docs": {
+            "get": {
+                "description": "Documentação detalhada dos endpoints disponíveis, formatos de resposta e exemplos",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "API Documentation",
+                "responses": {
+                    "200": {
+                        "description": "Documentação completa da API",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "description": "Verifica o status de saúde da API, tempo de atividade e versão",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Health Check",
+                "responses": {
+                    "200": {
+                        "description": "API funcionando corretamente",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.HealthResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "models.APIResponse": {
+            "description": "Estrutura padrão de resposta para todos os endpoints",
+            "type": "object",
+            "properties": {
+                "data": {
+                    "description": "Dados retornados pela operação"
+                },
+                "error": {
+                    "description": "Mensagem de erro (apenas em caso de falha)\n@example \"CNPJ inválido\"",
+                    "type": "string",
+                    "example": "CNPJ inválido"
+                },
+                "message": {
+                    "description": "Mensagem explicativa da operação (apenas em caso de sucesso)\n@example \"Consulta realizada com sucesso\"",
+                    "type": "string",
+                    "example": "Consulta realizada com sucesso"
+                },
+                "success": {
+                    "description": "Indica se a operação foi bem-sucedida\n@example true",
+                    "type": "boolean",
+                    "example": true
+                },
+                "timestamp": {
+                    "description": "Timestamp da resposta em formato ISO 8601\n@example \"2025-08-25T17:25:30.468715-03:00\"",
+                    "type": "string",
+                    "example": "2025-08-25T17:25:30.468715-03:00"
+                }
+            }
+        },
+        "models.CNAEData": {
+            "type": "object",
+            "properties": {
+                "codigo": {
+                    "type": "string"
+                },
+                "descricao": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.EnderecoData": {
+            "type": "object",
+            "properties": {
+                "bairro": {
+                    "type": "string"
+                },
+                "cep": {
+                    "type": "string"
+                },
+                "complemento": {
+                    "type": "string"
+                },
+                "ddd": {
+                    "type": "string"
+                },
+                "logradouro": {
+                    "type": "string"
+                },
+                "municipio": {
+                    "type": "string"
+                },
+                "numero": {
+                    "type": "string"
+                },
+                "telefone": {
+                    "type": "string"
+                },
+                "uf": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.HealthResponse": {
+            "type": "object",
+            "properties": {
+                "service": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "uptime": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ObrigacoesData": {
+            "type": "object",
+            "properties": {
+                "cte_a_partir_de": {
+                    "type": "string"
+                },
+                "edf_a_partir_de": {
+                    "type": "string"
+                },
+                "nfe_a_partir_de": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.SintegraData": {
+            "type": "object",
+            "properties": {
+                "cgc": {
+                    "type": "string"
+                },
+                "cnae_principal": {
+                    "type": "string"
+                },
+                "cnae_secundarios": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.CNAEData"
+                    }
+                },
+                "data_consulta": {
+                    "type": "string"
+                },
+                "data_situacao_cadastral": {
+                    "type": "string"
+                },
+                "endereco": {
+                    "$ref": "#/definitions/models.EnderecoData"
+                },
+                "inscricao_estadual": {
+                    "type": "string"
+                },
+                "numero_consulta": {
+                    "type": "string"
+                },
+                "obrigacoes": {
+                    "$ref": "#/definitions/models.ObrigacoesData"
+                },
+                "observacao": {
+                    "type": "string"
+                },
+                "razao_social": {
+                    "type": "string"
+                },
+                "regime_apuracao": {
+                    "type": "string"
+                },
+                "situacao_cadastral": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.SintegraRequest": {
+            "description": "Estrutura de dados para requisição de consulta CNPJ",
+            "type": "object",
+            "required": [
+                "cnpj"
+            ],
+            "properties": {
+                "cnpj": {
+                    "description": "CNPJ da empresa para consulta (apenas números, 14 dígitos)\n@example \"38139407000177\"",
+                    "type": "string",
+                    "example": "38139407000177"
+                }
+            }
+        },
+        "models.SintegraResponse": {
+            "description": "Dados estruturados retornados pela consulta no Sintegra MA",
+            "type": "object",
+            "properties": {
+                "captcha_solved": {
+                    "description": "Indica se o CAPTCHA foi resolvido automaticamente\n@example true",
+                    "type": "boolean",
+                    "example": true
+                },
+                "cnpj": {
+                    "description": "CNPJ consultado\n@example \"38139407000177\"",
+                    "type": "string",
+                    "example": "38139407000177"
+                },
+                "data": {
+                    "description": "Dados estruturados da empresa",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.SintegraData"
+                        }
+                    ]
+                },
+                "execution_time": {
+                    "description": "Tempo de execução da consulta (formato: \"45s\" ou \"2m30s\")\n@example \"45s\"",
+                    "type": "string",
+                    "example": "45s"
+                },
+                "status": {
+                    "description": "Status da consulta (sucesso, erro_captcha, erro_extracao)\n@example \"sucesso\"",
+                    "type": "string",
+                    "example": "sucesso"
+                },
+                "timestamp": {
+                    "description": "Timestamp da consulta\n@example \"2025-08-25T17:25:30.468715-03:00\"",
+                    "type": "string",
+                    "example": "2025-08-25T17:25:30.468715-03:00"
+                },
+                "url": {
+                    "description": "URL da página de resultado no Sintegra\n@example \"https://sistemas1.sefaz.ma.gov.br/sintegra/...\"",
+                    "type": "string",
+                    "example": "https://sistemas1.sefaz.ma.gov.br/sintegra/..."
+                }
+            }
+        }
+    }
+}
