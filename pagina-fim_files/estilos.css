@@ -1,0 +1,136 @@
+.titulo_tabela {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; font-weight: bold; color: #FFFFFF; background-color: #0070a8}
+
+.titulo_pagina {
+	font-family: Verdana, Arial, Helvetica, sans-serif;
+	font-size: 8pt;
+	font-weight: bold;
+	color: #FFFFFF;
+	text-align: center;
+	background-color: #0070a8;
+}
+
+.subtitulo {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; font-weight: bold; color: #006699; background-color: #E7EFF7}
+
+.texto {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; font-weight: normal; font-variant: normal; background-color: #FFFFFF ; text-decoration: none; color: #000000}
+
+.textoPequeno {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: xx-small; font-weight: normal; font-variant: normal; background-color: #FFFFFF ; text-decoration: none; color: #000000}
+
+.texto_alternativo {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; font-weight: normal; background-color: #FFF2E6}
+
+.link {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; font-weight: bold; color: #6699CC; font-variant: normal; background-color: #FFFFFF ; text-decoration: none}
+
+.cor_tabelamae { background-color: #e9f0f4}
+
+.botao_final { background-color:#0070A8;color:#FFFFFF; font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt}
+
+.botao_sistema {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; color: #FFFFFF; background-color: #6DA5BA}
+
+.botao_sistema2 { font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; font-style: normal; color: #FFFFFF; background-color:  #6DA5BA; width: 20px}
+
+.botao_voltar {  background-color: #C6C6C6; font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; color: #000000;}
+
+.fundo_popup {	background-color: #EEEEEE}
+
+.fundo_aba {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; color: #000000; background-color: #E7eff7; text-decoration: none; font-weight: normal}
+
+.fundo_aba2 {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; color: #FFFFFF; background-color: #0070a8; text-decoration: none; font-weight: normal}
+
+.texto_negrito { font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; font-weight: bold;   color: #000000; background-color: #FFFFFF}
+.texto_negrito2 { font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; font-weight: bold;   color: #000000; background: #eee}
+
+.texto_header_pagination { font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; font-weight: bold;   color: #000000; background-color: #FFFFFF}
+
+.texto_link {
+	font-family: Verdana, Arial, Helvetica, sans-serif;
+	font-size: 8pt;
+	font-style: normal;
+	font-weight: bold;
+	color: #0070a8;
+	/*background-color: #6699CC;*/
+}
+
+.texto_link_desabilitado {
+	font-family: Verdana, Arial, Helvetica, sans-serif;
+	font-size: 8pt;
+	font-style: normal;
+	font-weight: bold;
+	color: Silver;
+	/*background-color: Silver; */
+}
+
+.fundo_acao {  background-color: #FFF2E6}
+
+.texto_celuladestaque {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; font-style: normal; font-weight: normal; background-color: #EEEEEE}
+
+.texto_negrito_celinteira {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; font-style: normal; font-weight: bold; background-color: #E7EFF7}
+
+.cor_navegador {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; font-style: normal; font-weight: bold; background-color: #FFFFFF}
+
+.texto_negrito_celclaro {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; font-weight: bold; background-color: #EEEEEE}
+
+.menu_lateral1 {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; font-style: normal; font-weight: normal; color: #FF9900; text-decoration: none}
+a:hover {  text-decoration: none}
+
+.menu_lateral2 {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 7pt; font-style: normal; font-weight: normal; color: #FFCC00; text-decoration: none}
+a:hover {  text-decoration: none}
+
+.menu_lateral3 {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; font-style: normal; font-weight: bold; color: #CC3300; text-decoration: none}
+a:hover {  text-decoration: none}
+
+.menu_lateral6 {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; font-style: normal; font-weight: normal; color: #CC3300; text-decoration: none}
+a:hover {  text-decoration: none}
+
+.menu_lateral5 {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; font-style: normal; font-weight: bold; color: #999999; text-decoration: none}
+a:hover {  text-decoration: none}
+
+.caminho_negrito {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; font-weight: bold; color: #000000}
+
+.caminho_texto {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; font-weight: normal; text-decoration: none; color: #000000}
+
+.cor_tabela_highlight {  background-color: #EBEBEB}
+
+.popup {  background-color: #FFFFFF}
+
+.nota {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; font-weight: normal; background-color: #FFF2E6}
+
+.celula_vertical {
+	font-family: Verdana, Arial, Helvetica, sans-serif;
+	font-size: 8pt;
+	color: #000000;
+	background-color: #E9E9E9;
+}
+
+.celula_horizontal {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; color: #000000; background-color: #E9E9E9}
+
+.texto_titulo {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; font-weight: bold; color: #0070a8}
+
+.menu {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; color: #FFFFFF; text-decoration: none}
+
+input.senha {	font-family: Verdana, Arial, Helvetica, sans-serif;	font-size: 8pt; font-weight: normal; color: #000000; border: 1px #CCCCCC inset; cursor: text;}
+
+.email{
+	font-family: Verdana, Arial, Helvetica, sans-serif;
+	font-size: 8pt;
+	font-style: normal;
+	font-weight: normal;
+	color: White;
+	text-decoration: none;
+}
+
+.cor_mes {background-color: #F9FCFF; font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; font-weight: normal; color: #000000;}
+
+.menu{ background-color: #969696; }
+
+.dojoDialog {
+           background: #eee;
+           border: 1px solid #999;
+           -moz-border-radius: 5px;
+           padding: 4px; /*positioning outside of the visible scope
+to prevent some ui glitches visibility hidden does not work*/
+           position: absolute;
+           left: -800px;
+           top: -800px;
+       }
+
+.texto_sub {  font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; font-weight: normal; font-variant: normal; background-color: #004E76 ; text-decoration: none; color: #FFFFFF}
+.texto_negrito_sub { font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 8pt; font-weight: bold;   color: #FFFFFF; background-color: #004E76}

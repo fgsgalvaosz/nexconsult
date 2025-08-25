@@ -1,290 +1,151 @@
-# 🏢 CNPJ Consultor
+# Sintegra MA Scraper
 
-Sistema de consulta automatizada de CNPJs na Receita Federal com resolução automática de captcha.
+Scraper automatizado para consulta de CNPJ no sistema Sintegra do Maranhão, com resolução automática de reCAPTCHA usando a API SolveCaptcha.
 
-## ✨ Características
+## Características
 
-- 🚀 **Alta Performance**: Pool de workers com browsers otimizados
-- 🤖 **Captcha Automático**: Resolução via SolveCaptcha.com
-- 🔄 **Busca Direta**: Sempre consulta dados atualizados da Receita Federal
-- 📊 **API REST**: Interface simples e documentada
-- 🛡️ **Rate Limiting**: Controle de requisições
-- 📈 **Monitoramento**: Estatísticas em tempo real
+- ✅ **Headless: FALSE** - Navegador visível para debug e acompanhamento
+- 🤖 **Resolução automática de CAPTCHA** via SolveCaptcha API
+- 🔄 **Fallback manual** quando API não está disponível
+- 📊 **Logging estruturado** com zerolog
+- 💾 **Resultados em JSON** com timestamp
+- ⚡ **Arquitetura limpa** seguindo padrões do NexConsult
 
-## 🚀 Início Rápido
-
-### Pré-requisitos
+## Pré-requisitos
 
 - Go 1.21+
-- Chave API do SolveCaptcha.com
+- Google Chrome instalado
+- Conta SolveCaptcha (opcional, mas recomendado)
 
-### Instalação
+## Instalação
 
+1. **Clone ou baixe o projeto:**
 ```bash
-# Clone o repositório
 git clone <repo-url>
 cd nexconsult
+```
 
-# Configure as variáveis de ambiente
+2. **Instale as dependências:**
+```bash
+go mod tidy
+```
+
+3. **Configure a API key (opcional):**
+```bash
 cp .env.example .env
-# Edite o arquivo .env com suas configurações
-
-# Instale ferramentas de desenvolvimento (opcional)
-make install
-
-# Compile e execute
-make build
-make run
+# Edite o .env e adicione sua chave da SolveCaptcha
 ```
 
-### 🛠️ Comandos Make Disponíveis
+## Configuração da API SolveCaptcha
+
+1. Acesse: https://solvecaptcha.com/
+2. Crie uma conta e obtenha sua API key
+3. Configure a variável de ambiente:
 
 ```bash
-# Desenvolvimento
-make dev          # Executa com hot reload
-make build        # Compila a aplicação
-make run          # Executa a aplicação
-make clean        # Remove arquivos de build
+# Windows
+set SOLVECAPTCHA_API_KEY=sua_chave_aqui
 
-# Qualidade de código
-make fmt          # Formata o código
-make vet          # Executa go vet
-make lint         # Executa linter
-make test         # Executa testes
-make check        # Executa todas as verificações
-
-# Documentação
-make swagger      # Gera documentação Swagger
-
-# Docker
-make docker-build # Constrói imagem Docker
-make docker-run   # Executa container
-
-# Utilitários
-make deps         # Atualiza dependências
-make info         # Mostra informações do projeto
-make help         # Lista todos os comandos
+# Linux/Mac
+export SOLVECAPTCHA_API_KEY=sua_chave_aqui
 ```
 
-### Uso da API
+## Uso
 
+### Execução básica:
 ```bash
-# Consultar CNPJ
-curl "http://localhost:3000/api/v1/cnpj/38139407000177"
-
-# Verificar status do sistema
-curl "http://localhost:3000/api/v1/status"
+go run main.go
 ```
 
-## 📁 Estrutura do Projeto
-
-```
-nexconsult/
-├── main.go           # Aplicação principal
-├── browser.go        # Gerenciamento de browsers e extração
-├── worker.go         # Pool de workers
-├── captcha.go        # Cliente SolveCaptcha
-├── config.go         # Configurações
-├── types.go          # Tipos e estruturas
-├── legacy/           # Código Python (referência)
-│   ├── main.py
-│   ├── cnpj_consultor_v2.py
-│   └── requirements.txt
-└── docs/             # Documentação
-```
-
-## ⚙️ Configuração
-
-### Variáveis de Ambiente
-
-| Variável | Padrão | Descrição |
-|----------|--------|-----------|
-| `PORT` | 3000 | Porta do servidor |
-| `WORKERS_COUNT` | 5 | Número de workers |
-| `SOLVECAPTCHA_API_KEY` | - | Chave da API SolveCaptcha |
-| `LOG_LEVEL` | info | Nível de log (debug, info, warn, error) |
-| `RATE_LIMIT_RPM` | 100 | Requisições por minuto |
-
-### Configuração Avançada
-
+### Compilar e executar:
 ```bash
-# Browser
-export BROWSER_PAGE_TIMEOUT=30
-export BROWSER_NAV_TIMEOUT=30
-export BROWSER_ELEMENT_TIMEOUT=15
-
-# Workers
-export MAX_CONCURRENT=10
-export WORKER_TIMEOUT=300
-
-# Captcha
-export CAPTCHA_TIMEOUT=300
-export CAPTCHA_MAX_RETRIES=3
+go build -o sintegra-scraper .
+./sintegra-scraper
 ```
 
-## 📊 API Reference
+## Funcionamento
 
-### GET /api/v1/cnpj/{cnpj}
+1. **Inicialização**: Abre Chrome em modo visível (headless=false)
+2. **Navegação**: Acessa o portal Sintegra MA
+3. **Preenchimento**: Insere o CNPJ de teste (38139407000177)
+4. **CAPTCHA**: 
+   - Se API configurada: resolve automaticamente
+   - Se não: pausa para resolução manual
+5. **Consulta**: Submete o formulário e navega pelos resultados
+6. **Extração**: Coleta dados da página de detalhes
+7. **Resultado**: Salva em arquivo JSON com timestamp
 
-Consulta dados de um CNPJ.
+## Estrutura de Resultados
 
-**Parâmetros:**
-- `cnpj`: CNPJ com ou sem formatação
-
-**Resposta:**
 ```json
 {
-  "cnpj": "38.139.407/0001-77",
-  "razao_social": "FERRAZ AUTO CENTER LTDA",
-  "situacao": "ATIVA",
-  "data_situacao": "18/08/2020",
-  "endereco": {
-    "logradouro": "R GUANABARA",
-    "numero": "377",
-    "cidade": "IMPERATRIZ",
-    "uf": "MA",
-    "cep": "65903-270"
+  "cnpj": "38139407000177",
+  "status": "sucesso",
+  "url": "https://sistemas1.sefaz.ma.gov.br/sintegra/...",
+  "data": {
+    "campo_0": "Razão Social: EMPRESA EXEMPLO LTDA",
+    "campo_1": "CNPJ: 38.139.407/0001-77",
+    "razao_social": "EMPRESA EXEMPLO LTDA",
+    "situacao": "Ativa"
   },
-  "atividades": [...],
-  "comprovante": {
-    "emitido_em": "23/08/2025 às 10:45:56"
-  }
+  "execution_time": "45.2s",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "captcha_solved": true
 }
 ```
 
-### GET /api/v1/status
+## Logs e Monitoramento
 
-Retorna estatísticas do sistema.
+O sistema utiliza logging estruturado com níveis:
+- `INFO`: Operações normais
+- `WARN`: Avisos (ex: API CAPTCHA indisponível)
+- `ERROR`: Erros recuperáveis
+- `FATAL`: Erros que interrompem a execução
 
-**Resposta:**
-```json
-{
-  "jobs": {
-    "pending": 0,
-    "processing": 0,
-    "completed": 15
-  },
-  "workers": {
-    "total": 5,
-    "active": 2
-  },
-  "system": {
-    "uptime": "2h30m15s",
-    "version": "1.0.0"
-  }
-}
-```
+## Troubleshooting
 
-## 🔧 Desenvolvimento
-
-### Compilação
-
+### Chrome não encontrado
 ```bash
-go build -o cnpj-consultor .
+# Windows: Instale o Chrome ou adicione ao PATH
+# Linux: sudo apt install google-chrome-stable
 ```
 
-### Testes
+### CAPTCHA não resolve automaticamente
+- Verifique se `SOLVECAPTCHA_API_KEY` está configurada
+- Verifique se há créditos na conta SolveCaptcha
+- O script pausará para resolução manual se necessário
 
-```bash
-go test ./...
-```
+### Timeout na navegação
+- Verifique conexão com internet
+- Site pode estar indisponível
+- Aumente timeout na configuração se necessário
 
-### Logs
-
-```bash
-# Debug detalhado
-export LOG_LEVEL=debug
-./cnpj-consultor
-
-# Apenas erros
-export LOG_LEVEL=error
-./cnpj-consultor
-```
-
-## 📸 Screenshots de Erro
-
-O sistema captura automaticamente screenshots da página web sempre que ocorrer um erro durante o processamento. Esta funcionalidade é essencial para debug e análise de problemas.
-
-### Funcionalidades
-
-- **Captura Automática**: Screenshots são capturados automaticamente em todos os pontos de erro
-- **Múltiplos Formatos**: Salva tanto screenshot (PNG) quanto HTML da página
-- **Organização**: Arquivos organizados por tipo de erro, CNPJ e timestamp
-- **Não Intrusivo**: Não afeta o fluxo principal da aplicação
-
-### Tipos de Erro Capturados
-
-- Erro de navegação
-- Erro de carregamento da página
-- Erro de captcha (elemento não encontrado, resolução falhou, etc.)
-- Erro de submissão do formulário
-- Erro de extração de dados
-- E muitos outros...
-
-### Localização dos Arquivos
+## Arquitetura
 
 ```
-screenshots/
-├── erro_captcha_12345678000195_20240123_143022.png
-├── erro_captcha_12345678000195_20240123_143022.html
-├── erro_navigation_98765432000100_20240123_143045.png
-└── erro_navigation_98765432000100_20240123_143045.html
+main.go
+├── Config              # Configurações via env
+├── CaptchaSolver      # Integração SolveCaptcha API
+├── SintegraMAScraper  # Automação Rod/Chrome
+├── Logger             # Logging estruturado
+└── Models             # Estruturas de dados
 ```
 
-### Teste da Funcionalidade
+## Segurança
 
-```bash
-# Compile o teste
-go build -o test_screenshot test_screenshot.go
+- ✅ API keys via variáveis de ambiente
+- ✅ Não exposição de credenciais no código
+- ✅ User-agent realístico
+- ✅ Argumentos Chrome otimizados
 
-# Execute o teste (irá gerar erros intencionalmente)
-./test_screenshot
+## Licença
 
-# Verifique os screenshots gerados
-ls -la screenshots/
-```
+Seguindo padrões do projeto NexConsult.
 
-Para mais detalhes, consulte [SCREENSHOT_FEATURE.md](SCREENSHOT_FEATURE.md).
+---
 
-## 📈 Performance
-
-- **Primeira consulta**: ~30-40s (inclui resolução de captcha)
-- **Throughput**: ~100 consultas/hora (limitado pelo captcha)
-- **Concorrência**: 5 workers simultâneos
-- **Memória**: ~50MB por worker
-
-## 🛠️ Arquitetura
-
-### Componentes
-
-1. **API Server**: Fiber HTTP server
-2. **Worker Pool**: Gerencia workers concorrentes
-3. **Browser Manager**: Pool de browsers Chrome/Chromium
-4. **Captcha Client**: Interface com SolveCaptcha.com
-5. **CNPJ Extractor**: Extração de dados da Receita Federal
-
-### Fluxo de Processamento
-
-1. Requisição HTTP recebida
-2. Job criado e enviado para worker pool
-3. Worker obtém browser do pool
-4. Navega para site da Receita Federal
-5. Resolve captcha automaticamente
-6. Submete formulário e extrai dados
-7. Retorna dados estruturados
-
-## 📝 Licença
-
-MIT License - veja LICENSE para detalhes.
-
-## 🤝 Contribuição
-
-1. Fork o projeto
-2. Crie uma branch para sua feature
-3. Commit suas mudanças
-4. Push para a branch
-5. Abra um Pull Request
-
-## 📞 Suporte
-
-Para dúvidas ou problemas, abra uma issue no GitHub.
+**Desenvolvido seguindo as especificações do projeto NexConsult**
+- Arquitetura limpa
+- Logging estruturado com zerolog
+- Configuração dinâmica via environment
+- Integração SolveCaptcha API

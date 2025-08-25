@@ -1,0 +1,357 @@
+
+function insert(form) {
+   if(validateForm(form)) {
+      form.submit();
+   }
+}
+
+function update(form) {
+   if(validateForm(form)) {
+      form.submit();
+   }
+}
+
+function filter(form) {
+   if(validateForm(form)) {
+      form.submit();
+   }
+}
+
+function ehSelectNaoVazio(campoSelect) {
+         if( campoSelect.options[campoSelect.selectedIndex].value != "" )
+            return true;
+         campoSelect.focus();
+         return false;
+}
+
+function validateMandatoryFields(form) {
+   var bValid = true;
+   var focusField = null;
+   var i = 0;
+
+   
+   for (x in mandatoryFields) {
+       if (form[mandatoryFields[x]] != null && form[mandatoryFields[x]].value == '') {
+            if (i == 0) {
+                focusField = form[mandatoryFields[x]];
+                i++;
+             }
+            bValid = false;
+      }
+
+   }
+
+   if (focusField != null) {
+      focusField.focus();
+      alert(messages('mandatoryFields'));
+   }
+
+   return bValid;
+}
+
+function validateMandatoryFields2(form) {
+   var bValid = true;
+   var focusField = null;
+   var i = 0;
+
+   
+   for (x in mandatoryFields) {
+       if (form[mandatoryFields[x]] != null && form[mandatoryFields[x]].value == '') {
+            if (i == 0) {
+                focusField = form[mandatoryFields[x]];
+                i++;
+             }
+            bValid = false;
+      }
+
+   }
+
+   if (focusField != null) {
+      //focusField.focus();
+      alert(messages('mandatoryFields'));
+   }
+
+   return focusField;
+}
+
+function validateDateFields(form) {
+   var bValid = true;
+   var focusField = null;
+   var i = 0;
+   for (x in dateFields) {
+           // field, format
+       if (!isDate(form[dateFields[x][0]].value, dateFields[x][1])) {
+            if (i == 0) {
+                focusField = form[dateFields[x][0]];
+                i++;
+             }
+            bValid = false;
+      }
+
+   }
+
+   if (focusField != null) {
+      focusField.focus();
+      alert(messages('dateFields'));
+   }
+
+   return bValid;
+}
+
+function validateCpfFields(form) {
+   var bValid = true;
+   var focusField = null;
+   var i = 0;
+   for (x in cpfFields) {
+           //field, format
+       if (!isCPF(form[cpfFields[x]].value)) {
+            if (i == 0) {
+                focusField = form[cpfFields[x]];
+                i++;
+             }
+            bValid = false;
+            break;
+      }
+
+   }
+
+   if (focusField != null) {
+      focusField.focus();
+      alert(messages('cpfFields'));
+   }
+
+   return bValid;
+}
+
+function validateInscricaoEstadualFields(form) {
+   var bValid = true;
+   var focusField = null;
+   var i = 0;
+   for (x in inscricaoEstadualFields) {
+           // field, format
+       if (!isInscricaoEstadual(form[inscricaoEstadualFields[x]].value)) {
+            if (i == 0) {
+                focusField = form[inscricaoEstadualFields[x]];
+                i++;
+             }
+            bValid = false;
+      }
+
+   }
+
+   if (focusField != null) {
+      focusField.focus();
+      alert(messages('inscricaoEstadualFields'));
+   }
+
+   return bValid;
+}
+
+function validateCnpjFields(form) {
+   var bValid = true;
+   var focusField = null;
+   var i = 0;
+   for (x in cnpjFields) {
+           //// field, format
+       if (!isCNPJ(form[cnpjFields[x]].value)) {
+            if (i == 0) {
+                focusField = form[cnpjFields[x]];
+                i++;
+             }
+            bValid = false;
+            break;
+      }
+
+   }
+
+   if (focusField != null) {
+      focusField.focus();
+      alert(messages('cnpjField'));
+   }
+
+   return bValid;
+}
+function validateEmailFields(form) {
+   var bValid = true;
+   var focusField = null;
+   var i = 0;
+   for (x in emailFields) {
+           // field, format
+       if (!isEmail(form[emailFields[x]].value)) {
+            if (i == 0) {
+                focusField = form[emailFields[x]];
+                i++;
+             }
+            bValid = false;
+      }
+
+   }
+
+   if (focusField != null) {
+      focusField.focus();
+      alert(messages('emailField'));
+   }
+
+   return bValid;
+}
+
+// validate a CPF
+function isCPF(CPF) {
+
+     rcpf1 = CPF.substring(0,9);
+     rcpf2 = CPF.substring(9,11);
+
+     cpf1 = rcpf1 + rcpf2;
+     cpf2 = "";
+     controle = rcpf2;
+     contini = 10;
+     for (j=1; j<=2; j++) {
+        soma = 0;
+        i = 1;
+        while (i < contini) {
+          soma = soma + (parseInt(cpf1.substring(i-1,i))*(contini+1-i));
+          i++;
+        }
+        digito=(soma*10)%11;
+        if (digito==10) digito = 0;
+          cpf2 = cpf2 + digito;
+          contini++;
+        }
+        if (controle == cpf2) {
+          return true;
+        }
+        else  {
+           return false;
+        }
+           return true;
+}
+
+// validate a Inscricao Estadual
+function isInscricaoEstadual(inscricaoEstadual) {
+    var i, j, soma
+    soma = 0
+    if (inscricaoEstadual.length == 0) return(false)
+
+    if (inscricaoEstadual.length != 0 && inscricaoEstadual.length == 9)
+    {
+        j = 9
+        //faz o somatório
+      for (i = 1;i < inscricaoEstadual.length;i++)
+        {
+            soma = soma + parseInt(inscricaoEstadual.substr(i-1,1)) * j
+            j = j - 1
+      }
+    soma = soma % 11
+    if(soma > 1)
+         soma = 11 - soma
+    else
+         soma = 0
+
+
+    //faz a comparação
+    if (parseInt(inscricaoEstadual.substr(8,1)) != parseInt(soma))
+              return(false)
+    else
+              return(true)
+    }
+    else
+    {
+           return(false)
+        exit()
+    }
+}
+
+// validate a CGC
+function isCNPJ(CGC) {
+
+   var rcgc1;
+   var rcgc2;
+
+   if(CGC.length != 14) {
+       return false;
+   }
+   rcgc1 = CGC.substring(0,12);
+   rcgc2 = CGC.substring(12,14);
+
+   cgc1 = rcgc1;
+   cgc2 = "";
+   controle = rcgc2;
+   texto = "543298765432";
+   contini = 13;
+
+   for (j=1; j<=2; j++) {
+     soma = 0;
+     i = 1;
+     while (i <contini) {
+       soma = soma + (parseInt(cgc1.substring(i-1,i))*parseInt(texto.substring(i-1,i)));
+       i++;
+     }
+     digito=(soma*10)%11;
+     if (digito == 10) { digito = 0;}
+       cgc2 = cgc2 + digito;
+       texto = "6" + texto;
+       cgc1 = cgc1 + digito;
+       contini++;
+     }
+
+     if (controle == cgc2) {
+       return true;
+     }
+     else  {
+      return false;
+     }
+     return true;
+}
+
+/**
+ * Reference: Sandeep V. Tamhankar (stamhankar@hotmail.com),
+ * http://javascript.internet.com
+ */
+function isEmail(emailStr) {
+    if (emailStr.length == 0) {
+      return true;
+    }
+    var emailPat=/^(.+)@(.+)$/;
+    var specialChars="\\(\\)<>@,;:\\\"\\.\\[\\]";
+    var validChars="\[^\\s" + specialChars + "\]";
+    var quotedUser="(\"[^\"]*\")";
+    var ipDomainPat=/^(\d{1,3})[.](\d{1,3})[.](\d{1,3})[.](\d{1,3})$/;
+    var atom=validChars + '+';
+    var word="(" + atom + "|" + quotedUser + ")";
+    var userPat=new RegExp("^" + word + "(\\." + word + ")*$");
+    var domainPat=new RegExp("^" + atom + "(\\." + atom + ")*$");
+    var matchArray=emailStr.match(emailPat);
+    if (matchArray == null) {
+     return false;
+   }
+   var user=matchArray[1];
+   var domain=matchArray[2];
+   if (user.match(userPat) == null) {
+       return false;
+   }
+   var IPArray = domain.match(ipDomainPat);
+   if (IPArray != null) {
+        for (var i = 1; i <= 4; i++) {
+        if (IPArray[i] > 255) {
+          return false;
+        }
+     }
+     return true;
+   }
+   var domainArray=domain.match(domainPat);
+   if (domainArray == null) {
+      return false;
+   }
+   var atomPat=new RegExp(atom,"g");
+   var domArr=domain.match(atomPat);
+   var len=domArr.length;
+   if ((domArr[domArr.length-1].length < 2) ||
+        (domArr[domArr.length-1].length > 3)) {
+     return false;
+   }
+   if (len < 2) {
+     return false;
+   }
+   return true;
+}
+

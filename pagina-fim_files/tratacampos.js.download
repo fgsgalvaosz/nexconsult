@@ -1,0 +1,446 @@
+// Arquivo Confidencial Datasus/CESAR: tratacampos.js
+
+// ------------------------------------------------------------------------------------------ //
+// Acrescenta algumas propriedades aos controles:
+// .Indice			: indica o índice na tela para o controle
+// .IndiceAnterior	: indica o índice do controle anterior
+// .IndicePosterior	: indica o índice para o controle posterior
+// .Tam 			: tamanho máximo para digitação
+// .AutoSkip		: indica se pula para o próximo campo após completar o tamanho do campo
+// .Tipo			: indica o tipo de dado
+//						'D' -> (Digitos) só dígitos de 0(zero) a 9(nove)
+//						'N' -> (Numeros) dígitos de 0(zero) a 9(nove), "."(ponto) e ","(vírgula)
+//						'F' -> (Ponto Flutuante) dígitos de 0(zero) a 9(nove) e "."(ponto)
+//						'FBR' -> (Ponto Flutuante Brasil) dígitos de 0(zero) a 9(nove) e ","(ponto)
+//						'C' -> (Caracteres) caracteres de 'a' até 'z' e de 'A' até 'Z' e vogais acentuadas (áéíóúÁÉÍÓÚãõÃÕçÇ)
+//						'CD'-> (Caracteres e Digitos) caracteres de 'a' até 'z' e de 'A' até 'Z' e vogais acentuadas (áéíóúÁÉÍÓÚãõÃÕçÇ)
+//						'DT' -> (Datas) digitos e "/"
+//						'T' -> (Telefone) só dígitos de 0(zero) a 9(nove), "-", "(" e ")"
+//						'NC' -> (Numero da conta) só dígitos de 0(zero) a 9(nove) e "-"
+//						'NP' -> (Numero do processo) só dígitos de 0(zero) a 9(nove) e "/"
+//						'E' -> (Email) caracteres de 'a' até 'z' e de 'A' até 'Z', "@", ".",
+//									   "-", "_" e dígitos de 0(zero) a 9(nove)
+//						'U' -> (URL) caracteres de 'a' até 'z' e de 'A' até 'Z',
+//									 dígitos de 0(zero) a 9(nove), "-", "_", "/", ".", ":" e "\"
+//						'L' -> (Logradouro) caracteres de 'a' até 'z' e de 'A' até 'Z',
+//											dígitos de 0(zero) a 9(nove), "/", "-"
+//											"." e ","
+//						'S' -> (Senha) caracteres de 'a' a 'z' e de 'A' até 'Z', dígitos de 0(zero)
+//									   a 9(nove), "!", "@", "#", "$", "%", "¨", "&", "*", "(", ")",
+//				       "_", "-", "+", "=", "}", "]", "[", "{", "^", "~", "/",
+//									   ",", ".", ":", "|", "\"
+//						'CC'-> (Conselho Classe) caracteres de 'a' até 'z' e de 'A' até 'Z' e vogais acentuadas (áéíóúÁÉÍÓÚãõÃÕ),
+//												 dígitos de 0(zero) a 9(nove) e "-","+","|","," e "."
+//						'CP'-> (Codigo Procedimento) Números de 0 a 9 , "." e "-"
+//			'DS'-> (Descrição) Caracreres, Numeros, '/', '-', '.', ',',
+//			       '&', '_', '(', ')', ':', '?', '+', '=', '[', ']',
+//			       '!', '#', '\'
+//						outro -> qualquer caracter entre ascii 32 e ascii 127
+//						'CS' -> (Codigo SUS - CID) Utilizado em pesquisas por codigo de entidades SUS
+//							caracteres de 'a' até 'z' e de 'A' até 'Z', dígitos de 0(zero) a 9(nove)
+// .Saltar			: (reservado) indica o momento de saltar de campo
+// ------------------------------------------------------------------------------------------ //
+
+
+// Criando uma variável global fFormEvento que é setada ao inicializar a página
+var fFormEvento;
+var ctrlAtual;
+
+//-----------------------------------------------------------------------------
+//- Seta o foco para o primeiro campo de um determinado formulario
+//
+//- parâmetro form O formulario
+//
+//-----------------------------------------------------------------------------
+
+function testeJs() {
+    alert("FUNCIONOU");
+}
+function setaFocusPrimeiroCampo(formulario) {
+    for (i = 0; i < formulario.elements.length; i++) {
+	campo = formulario.elements[i];
+	tipo = "" + campo.type;
+	if(!campo.disabled) {
+	    if ( (tipo == "text") ||
+		 (tipo == "select-one") ||
+		 (tipo == "radio") ||
+		 (tipo == "password") ) {
+		//campo.select();
+		campo.focus();
+		break;
+	    }
+	}
+    }
+
+}
+
+function inicializaForm2(formulario) {
+    fFormEvento = formulario;
+}
+
+function inicializaForm(formulario) {
+    fFormEvento = formulario;
+    
+    setaFocusPrimeiroCampo(formulario);
+}
+
+// Carrega índices para o próximo controle e controle anterior
+function InicializarIndices()
+{
+    if (document.CargaInicial==null)
+    {
+	document.CargaInicial=false;		// Seta para só fazer uma vez por documento
+	var ctrlAnterior=null;
+	var IndAnt=0;
+	for ( var i=0; i<fFormEvento.elements.length;i++)
+	{
+	    var e=fFormEvento.elements[i];
+	    if ( e.type!="hidden")  //alterado por Marcelo Nobrega && e.type!="image" )
+	    {
+		if ( ctrlAnterior != null )
+		    ctrlAnterior.IndicePosterior=i;
+		ctrlAnterior=e;
+		e.Indice=i;
+		e.IndiceAnterior=IndAnt;
+	    }
+	}
+	//if ( ctrlAnterior!=null )
+	//{
+	//	ctrlAnterior.IndicePosterior=i-1;
+	//}
+    }
+}
+
+// Colocar o foco em determinado campo
+function SetarFoco ( ind )
+    {
+    InicializarIndices();
+    //if ( isNaN(ind) && fFormEvento.elements[ind].type!="hidden") - alterado por Marcelo Nobrega
+    if ( isNaN(ind) && fFormEvento.elements[ind].type!="hidden" && !fFormEvento.elements[ind].disabled)
+
+//	  if(fFormEvento.elements[ind].type == 'select-one'){
+//	      fFormEvento.elements[ind][0].focus();
+//	  } else {
+	    fFormEvento.elements[ind].focus();
+//	  }
+    else
+	for (;ind<fFormEvento.elements.length;ind++)
+	    //if ( fFormEvento.elements[ind].type!="hidden") alterado por Marcelo Nobrega
+	    if ( fFormEvento.elements[ind].type!="hidden" && !fFormEvento.elements[ind].disabled)
+		break;
+	if ( ind<=fFormEvento.elements.length ){
+//	      if(fFormEvento.elements[ind].type == 'select-one'){
+//		  fFormEvento.elements[ind][0].focus();
+//	      } else {
+		fFormEvento.elements[ind].focus();
+//	      }
+	}
+    }
+
+// Limpar o conteúdo do(s) campo(s)
+function LimparCampo ( ind )
+    // Para -1, limpa todos os elementos
+    {
+    if (isNaN(ind))			// Limpa pelo nome
+	fFormEvento.elements[ind].value="";
+    else if (ind != -1 )	// Limpa o elemento "ind" ( só considera "text" e "password" )
+	for ( var i=ind; i < fFormEvento.elements.length;i++ )
+	    if ( fFormEvento.elements[i].type=="text" || fFormEvento.elements[i].type=="password")		// Só limpa campo "text"
+		{
+		fFormEvento.elements[i].value="";
+		break;
+		}
+    else					// Limpa todos os elementos "text" e "password"
+	for ( var i=0; i < fFormEvento.elements.length; i++ )
+	    if ( fFormEvento.elements[i].type=="text" || fFormEvento.elements[i].type=="password" )
+		fFormEvento.elements[i].value="";
+
+    }
+
+// Verificar qual navegador
+function QualNavegador()
+{
+    var retorno = "";
+    var s = navigator.appName;
+
+    if ( s == "Microsoft Internet Explorer" )
+	retorno = "IE";
+    else if ( s == "Netscape" )
+	retorno = "NE";
+    else
+	retorno = "";
+
+    return retorno;
+
+}
+
+// Verificar qual a versão do navegador
+function QualVersao()
+{
+    var s = navigator.appVersion;
+    if ( QualNavegador() == "IE" )
+    {
+	var i = s.search("MSIE");
+	s=s.substring(i+5);
+	i=s.search(".");
+	return parseInt(s.substring(0,i+1));
+    }
+    else if ( QualNavegador() == "NE" )
+	return parseInt(s.substring(0,1));
+    else
+	return 0;
+}
+
+
+// Setar o evento
+function SetarEvento(ctrl, Tam, Tipo, AutoSkip )
+{
+
+    // Filtra navegadores conhecidos
+    
+    var s = QualNavegador();
+    
+    ctrlAtual = ctrl.name;
+    /*if (ctrl.onkeypress==null)
+    {*/
+	if (AutoSkip==null)
+	    AutoSkip=true;
+	if (Tipo!=null)
+	    Tipo.toUpperCase();
+	ctrl.Tam=Tam;
+	ctrl.Tipo=Tipo;
+	ctrl.AutoSkip=AutoSkip;
+	ctrl.Saltar=false;
+	InicializarIndices();
+	ctrl.onkeypress=ValidarTecla;
+
+	if (QualNavegador()=="IE" && (QualVersao()>=5))
+	    ctrl.onkeyup=SaltarCampo;
+    //}
+}
+
+function SaltarCampo(ctrl)
+{
+    if (ctrl==null)
+	ctrl=this;
+    if ( ctrl.AutoSkip && ctrl.Saltar)
+	if (ctrl.Saltar)
+	{
+	    ctrl.Saltar=false;
+	    /*if ( ctrl.IndicePosterior != null )
+		SetarFoco(ctrl.IndicePosterior);*/
+	}
+}
+
+function setaTabOrderProx(campo) {
+var confirma
+	confirma = false;
+
+	for (var i = 0; i < fFormEvento.elements.length; i++)
+	{
+		var elemento = fFormEvento.elements[i];
+		if (elemento.type != "hidden") {
+
+			if (confirma) {
+				return (i);
+				exit;
+			}
+
+			if (elemento.name == campo)
+				confirma = true;
+
+		}
+	}
+	return(0);
+
+}
+
+function SetaFocoCampo(indice) {
+	if (indice >= 0) {
+	        //alert(indice);
+			if (fFormEvento.elements[indice].type!="hidden" && !fFormEvento.elements[indice].disabled) {
+
+				//this = fFormEvento.elements[indice];
+
+				fFormEvento.elements[indice].focus();
+				if (fFormEvento.elements[indice].type == "text") {
+					fFormEvento.elements[indice].select();
+				}
+			}
+	}
+}
+
+// Fazer o salto de campo
+function ValidarTecla (evnt)
+{
+
+    var tk;
+    var c;
+	var prox;
+
+    // Recebe a tecla pressionada
+    tk = ( (QualNavegador()=="IE") ? event.keyCode : evnt.which);
+
+    
+    c=String.fromCharCode(tk);
+    c=c.toUpperCase();
+    // -- Este trecho faz com que o <Enter> tenha a função de <Tab>, mas acho inviável, pois não é possível
+    //	     colocar o foco em campos do Tipo "image", e, neste caso, nunca seria possível fazer a submissão
+    //	     do formulário
+     if ( tk == 13 )
+     {
+    	/*this.Saltar=true;
+    	SaltarCampo(this);
+    	return false;
+		*/
+		//alert(ctrlAtual);
+		var campo = ctrlAtual;
+		prox = setaTabOrderProx(campo);
+		SetaFocoCampo(prox);
+		return false;
+     }
+
+    // Só aceita teclas alfanuméricas. Não aceita teclas de controle
+    if ( tk < 32 )
+	return true;
+
+    if (this.Tipo == "D") {
+	if ( c<"0" || c>"9" )
+	    return false;
+    }
+
+    if (this.Tipo == "N") {
+	if ( (c<"0" || c>"9") && (c!="." && c!=",") )
+	    return false;
+	if ( (c==",") && ((this.value.search(",")>-1) || (this.value.length==0)) )
+	    return false;
+	if ( (c==".") && (this.value.length==0) )
+	    return false;
+    }
+    if (this.Tipo == "F") {
+	    if ( (c<"0" || c>"9") && c!="." )
+	        return false;
+	    if ( (c==".") && (this.value.length==0) )
+	        return false;
+    }
+
+    if (this.Tipo == "FBR") {
+	    if ( (c<"0" || c>"9") && c!="," ) {
+	        return false;
+	    }
+	    if ( (c==",") && (this.value.length==0) ) {
+	        return false;
+	    }
+    }
+
+    if (this.Tipo == "CN") {
+	    if ( (c<"A" || c>"Z") && (c<"0" || c>"9") /*&&  (c!="á") &&  (c!="é") &&	(c!="í") &&  (c!="ó") &&  (c!="ú") &&  (c!="Á") &&  (c!="É") &&  (c!="Í") &&  (c!="Ó") &&  (c!="Ú") &&	(c!="ã") &&  (c!="õ") &&  (c!="Ã") &&  (c!="Õ") && (c!="â") && (c!="ê") && (c!="ô") && (c!="Â") && (c!="Ê") && (c!="Ô") &&  (c!="ç") && (c!="Ç")*/) {
+	        return false;
+	    }
+    }
+    
+    if (this.Tipo == "MN") {
+	    if ( (c<"A" || c>"Z") && (c<"0" || c>"9") &&  (c!=".") /*&&  (c!="é") &&	(c!="í") &&  (c!="ó") &&  (c!="ú") &&  (c!="Á") &&  (c!="É") &&  (c!="Í") &&  (c!="Ó") &&  (c!="Ú") &&	(c!="ã") &&  (c!="õ") &&  (c!="Ã") &&  (c!="Õ") && (c!="â") && (c!="ê") && (c!="ô") && (c!="Â") && (c!="Ê") && (c!="Ô") &&  (c!="ç") && (c!="Ç")*/) {
+	        return false;
+	    }
+    }
+    
+    if (this.Tipo == "C") {
+	    if ( (c<"A" || c>"Z") && (c!=" ") /*&&  (c!="á") &&  (c!="é") &&	(c!="í") &&  (c!="ó") &&  (c!="ú") &&  (c!="Á") &&  (c!="É") &&  (c!="Í") &&  (c!="Ó") &&  (c!="Ú") &&	(c!="ã") &&  (c!="õ") &&  (c!="Ã") &&  (c!="Õ") && (c!="â") && (c!="ê") && (c!="ô") && (c!="Â") && (c!="Ê") && (c!="Ô") &&  (c!="ç") && (c!="Ç")*/) {
+	        return false;
+	    }
+    }
+
+    if (this.Tipo == "CD") {
+	    if ( (c<"A" || c>"Z") && (c<"0" || c>"9") && (c!=" ") /*&&  (c!="á") &&  (c!="é") &&  (c!="í") &&  (c!="ó") &&  (c!="ú") &&  (c!="Á") &&	(c!="É") &&  (c!="Í") &&  (c!="Ó") &&  (c!="Ú") &&  (c!="ã") &&  (c!="õ") &&  (c!="Ã") &&  (c!="Õ") && (c!="â") && (c!="ê") && (c!="ô") && (c!="Â") && (c!="Ê") && (c!="Ô") && (c!="ç")  && (c!="Ç")*/) {
+	        return false;
+	    }
+    }
+
+    if (this.Tipo == "DT") {
+	    if ( (c<"0" || c>"9") && c!="/" ) {
+	        return false;
+	    }
+    }
+
+    if (this.Tipo == "T") {
+	    if ( (c<"0" || c>"9") && (c!="-" && c!="(" && c!=")") ) {
+	        return false;
+	    }
+    }
+
+    if (this.Tipo == "NC") {
+	    if ( (c<"0" || c>"9") && (c!="-")) {
+	        return false;
+	    }
+    }
+
+    if (this.Tipo == "NP") {
+	if ( (c<"0" || c>"9") && (c!="/"))
+	    return false;
+    }
+
+
+    if (this.Tipo == "E") {
+	if ( (c<"A" || c>"Z") && (c<"0" || c>"9") && (c!="@" && c!="." && c!="-" && c!="_"))
+	    return false;
+    }
+
+    if (this.Tipo == "U") {
+	if ( (c<"A" || c>"Z") && (c<"0" || c>"9") && (c!="-" && c!="_" && c!=":" && c!="." && c!="/" && c!="\\") )
+	    return false;
+    }
+
+    if (this.Tipo == "L") {
+	if ( (c<"A" || c>"Z") && (c<"0" || c>"9") && (c!="/" && c!="-" && c!="." && c!="," && c!=" "))
+	    return false;
+    }
+
+    if (this.Tipo == "LE") {
+	if ((c<"0" || c>"9") && (c!="," ))
+	    return false;
+    }
+
+    if (this.Tipo == "S") {
+	if ( (c<"A" || c>"Z") && (c<"0" || c>"9") && (c!="!" && c!="@" && c!="#" && c!="$" && c!="%" && c!="¨" && c!="&" && c!="*" && c!="(" && c!=")" && c!="_" && c!="-" && c!="+" && c!="=" && c!="}" && c!="]" && c!="[" && c!="{" && c!="^" && c!="~" && c!="/" && c!="?" && c!="," && c!="." && c!=":" && c!="|" && c!="\\"))
+	    return false;
+    }
+
+    if (this.Tipo == "CC") {
+	    if ( (c<"A" || c>"Z") && (c<"0" || c>"9") && (c!=" ")/* &&  (c!="á") &&  (c!="é") &&  (c!="í") &&  (c!="ó") &&  (c!="ú") &&  (c!="Á") &&	(c!="É") &&  (c!="Í") &&  (c!="Ó") &&  (c!="Ú") &&  (c!="ã") &&  (c!="õ") &&  (c!="Ã") &&  (c!="Õ") && (c!="â") && (c!="ê") && (c!="ô") && (c!="Â") && (c!="Ê") && (c!="Ô") &&	(c!="ç") &&  (c!="-") &&  (c!="+") &&  (c!="|") &&  (c!=",") &&  (c!=".")*/) {
+	        return false;
+	    }
+    }
+
+    if (this.Tipo == "CP") {
+	if ( (c<"0" || c>"9") && (c!=".") &&  (c!="-") )
+	    return false;
+    }
+
+    if (this.Tipo == "DS") {
+	if ( (c<"A" || c>"Z") && (c<"0" || c>"9") && (c!=" ") /*&&  (c!="á")
+	     &&  (c!="é") &&  (c!="í") &&  (c!="ó") &&	(c!="ú") &&  (c!="Á")
+	     && (c!="É") &&  (c!="Í") &&  (c!="Ó") &&  (c!="Ú") &&  (c!="ã")
+	     &&  (c!="õ") &&  (c!="Ã") &&  (c!="Õ") && (c!="â") && (c!="ê")
+	     && (c!="ô") && (c!="Â") && (c!="Ê") && (c!="Ô") && (c!="ç")
+	     && (c!="Ç") && (c != "/") && (c!="-") && (c != ".") && (c != ",")
+	     && (c!="&") && (c != "_") && (c!="(") && (c != ")") && (c != ":")
+	     && (c!="?") && (c != "+") && (c!="=") && (c != "[") && (c != "]")
+	     && (c!="!") && (c != "#") && (c != "\\") */ )
+	    return false;
+    }
+
+    if (this.Tipo == "CS") {
+	if ( (c<"A" || c>"Z") && (c<"a" || c>"z") && (c<"0" || c>"9") )
+	    return false;
+    }
+
+    if (this.AutoSkip) {
+    	this.Saltar=(this.value.length==this.Tam-1);
+    	if ( ((QualNavegador()=="IE") && QualVersao()<5) || (QualNavegador()!="IE") )
+		SaltarCampo(this);
+	}
+
+    return true;
+}
+
