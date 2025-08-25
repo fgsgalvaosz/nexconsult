@@ -203,7 +203,7 @@ func (cs *CaptchaSolver) GetCaptchaResult(taskID string) (string, error) {
 
 		resp, err := cs.client.Get(url)
 		if err != nil {
-			cs.logger.Error().Err(err).Msg("Erro na consulta")
+			cs.logger.Error().Err(err).Msg("Erro na consulta HTTP")
 			time.Sleep(cs.config.RetryDelay)
 			continue
 		}
@@ -216,30 +216,72 @@ func (cs *CaptchaSolver) GetCaptchaResult(taskID string) (string, error) {
 			continue
 		}
 
+		bodyStr := string(body)
+		cs.logger.Info().Str("response_body", bodyStr).Msg("Resposta da API")
+
+		// Tentar parsear como JSON primeiro
 		var result SolveCaptchaResultResponse
-		if err := json.Unmarshal(body, &result); err != nil {
-			cs.logger.Error().Err(err).Msg("Erro ao parsear resultado")
-			time.Sleep(cs.config.RetryDelay)
-			continue
-		}
-
-		if result.Status == 1 {
+		if err := json.Unmarshal(body, &result); err == nil {
+			// Resposta JSON
 			cs.logger.Info().
-				Str("task_id", taskID).
-				Msg("CAPTCHA resolvido com sucesso")
-			return result.Request, nil
+				Int("status", result.Status).
+				Str("error", result.Error).
+				Msg("Resposta JSON recebida")
+
+			if result.Status == 1 {
+				cs.logger.Info().
+					Str("task_id", taskID).
+					Msg("CAPTCHA resolvido com sucesso (JSON)")
+				return result.Request, nil
+			}
+
+			if result.Error == "CAPCHA_NOT_READY" {
+				cs.logger.Info().Msg("CAPTCHA ainda processando (JSON)...")
+				time.Sleep(cs.config.RetryDelay)
+				continue
+			}
+
+			if result.Error != "" {
+				return "", fmt.Errorf("erro da API SolveCaptcha (JSON): %s", result.Error)
+			}
+		} else {
+			// Resposta texto simples (formato OK|result)
+			cs.logger.Info().Msg("Tentando parsear resposta como texto simples")
+
+			if strings.HasPrefix(bodyStr, "OK|") {
+				token := strings.TrimPrefix(bodyStr, "OK|")
+				token = strings.TrimSpace(token)
+				cs.logger.Info().
+					Str("task_id", taskID).
+					Str("token_preview", token[:min(10, len(token))]+ "...").
+					Msg("CAPTCHA resolvido com sucesso (texto)")
+				return token, nil
+			}
+
+			if bodyStr == "CAPCHA_NOT_READY" {
+				cs.logger.Info().Msg("CAPTCHA ainda processando (texto)...")
+				time.Sleep(cs.config.RetryDelay)
+				continue
+			}
+
+			// Outros erros
+			if bodyStr != "" {
+				return "", fmt.Errorf("erro da API SolveCaptcha (texto): %s", bodyStr)
+			}
 		}
 
-		if result.Error == "CAPCHA_NOT_READY" {
-			cs.logger.Info().Msg("CAPTCHA ainda processando, aguardando...")
-			time.Sleep(cs.config.RetryDelay)
-			continue
-		}
-
-		return "", fmt.Errorf("erro na resolução: %s", result.Error)
+		return "", fmt.Errorf("resposta inválida da API: %s", bodyStr)
 	}
 
 	return "", fmt.Errorf("timeout na resolução do CAPTCHA após %d tentativas", cs.config.MaxRetries)
+}
+
+// Funcção auxiliar para min
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // SolveCaptcha resolve um CAPTCHA completo
@@ -249,8 +291,9 @@ func (cs *CaptchaSolver) SolveCaptcha(googleKey, pageURL string) (string, error)
 		return "", err
 	}
 
-	// Aguardar um pouco antes de começar a consultar
-	time.Sleep(10 * time.Second)
+	// Aguardar 20 segundos para reCAPTCHA conforme documentação
+	cs.logger.Info().Msg("Aguardando 20 segundos para processamento do reCAPTCHA...")
+	time.Sleep(20 * time.Second)
 
 	return cs.GetCaptchaResult(taskID)
 }
