@@ -174,20 +174,30 @@ func (cs *CaptchaSolver) SubmitCaptcha(googleKey, pageURL string) (string, error
 		return "", fmt.Errorf("erro ao ler resposta: %v", err)
 	}
 
+	bodyStr := string(body)
+	cs.logger.Info().Str("submit_response", bodyStr).Msg("Resposta da submissão")
+
+	// Tentar parsear como JSON primeiro
 	var response SolveCaptchaResponse
-	if err := json.Unmarshal(body, &response); err != nil {
-		return "", fmt.Errorf("erro ao parsear resposta: %v", err)
+	if err := json.Unmarshal(body, &response); err == nil {
+		// Resposta JSON
+		if response.Status != 1 {
+			return "", fmt.Errorf("erro na submissão (JSON): %s", response.Error)
+		}
+		cs.logger.Info().Str("task_id", response.Request).Msg("CAPTCHA submetido com sucesso (JSON)")
+		return response.Request, nil
+	} else {
+		// Resposta texto simples (formato OK|taskid)
+		if strings.HasPrefix(bodyStr, "OK|") {
+			taskID := strings.TrimPrefix(bodyStr, "OK|")
+			taskID = strings.TrimSpace(taskID)
+			cs.logger.Info().Str("task_id", taskID).Msg("CAPTCHA submetido com sucesso (texto)")
+			return taskID, nil
+		}
+
+		// Erro em formato texto
+		return "", fmt.Errorf("erro na submissão (texto): %s", bodyStr)
 	}
-
-	if response.Status != 1 {
-		return "", fmt.Errorf("erro na submissão: %s", response.Error)
-	}
-
-	cs.logger.Info().
-		Str("task_id", response.Request).
-		Msg("CAPTCHA submetido com sucesso")
-
-	return response.Request, nil
 }
 
 // GetCaptchaResult obtém o resultado da resolução do CAPTCHA
