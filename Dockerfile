@@ -19,16 +19,27 @@ COPY . .
 # Build da aplicação
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 
-# Estágio de produção - usando imagem com Chrome pré-configurado
-FROM ghcr.io/puppeteer/puppeteer:21.6.1
+# Estágio de produção - usando Alpine com Chromium
+FROM alpine:latest
 
-# A imagem do Puppeteer já tem as dependências necessárias
+# Instalar dependências necessárias incluindo Chromium
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    chromium \
+    nss \
+    freetype \
+    freetype-dev \
+    harfbuzz \
+    ttf-freefont \
+    && rm -rf /var/cache/apk/*
 
-# Usar o usuário pptruser que já existe na imagem do Puppeteer
-USER pptruser
+# Criar usuário não-root
+RUN addgroup -g 1001 -S appuser && \
+    adduser -S appuser -u 1001 -G appuser
 
 # Definir diretório de trabalho
-WORKDIR /home/pptruser
+WORKDIR /home/appuser
 
 # Copiar binário da aplicação
 COPY --from=builder /app/main .
@@ -39,6 +50,9 @@ ENV CHROME_BIN=/usr/bin/chromium-browser
 ENV CHROME_PATH=/usr/bin/chromium-browser
 ENV DISPLAY=:99
 ENV HOME=/home/appuser
+
+# Ajustar permissões
+RUN chown -R appuser:appuser /home/appuser
 
 # Expor porta da aplicação
 EXPOSE 8080
