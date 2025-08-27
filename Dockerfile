@@ -11,7 +11,6 @@ WORKDIR /app
 COPY go.mod go.sum ./
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
-COPY docs/ ./docs/
 
 # Download das dependências
 RUN go mod download
