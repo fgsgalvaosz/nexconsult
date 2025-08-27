@@ -431,14 +431,12 @@ func NewSintegraMAScraper(config *Config, logger zerolog.Logger) *SintegraMAScra
 func (s *SintegraMAScraper) Initialize() error {
 	s.logger.Info().Msg("Inicializando navegador Chrome")
 
-	// Tentar encontrar Chrome/Chromium instalado no sistema
-	var chromePath string
-	path, found := launcher.LookPath()
-	if found {
-		chromePath = path
-		s.logger.Info().Str("chrome_path", path).Msg("Chrome encontrado no sistema")
-	} else {
-		// Tentar caminhos específicos do Alpine Linux
+	// Tentar encontrar Chrome/Chromium no sistema usando LookPath
+	chromePath, exists := launcher.LookPath()
+	if !exists {
+		s.logger.Info().Msg("Chrome não encontrado via LookPath, tentando caminhos específicos do Alpine")
+		
+		// Tentar caminhos específicos do Alpine/Chromium
 		alpinePaths := []string{
 			"/usr/bin/chromium-browser",
 			"/usr/bin/chromium",
@@ -450,17 +448,21 @@ func (s *SintegraMAScraper) Initialize() error {
 			if _, err := os.Stat(alpinePath); err == nil {
 				chromePath = alpinePath
 				s.logger.Info().Str("chrome_path", alpinePath).Msg("Chromium encontrado no Alpine")
+				exists = true
 				break
 			}
 		}
 		
-		if chromePath == "" {
-			s.logger.Info().Msg("Chrome não encontrado no sistema, usando download automático")
+		if !exists {
+			return fmt.Errorf("Chrome/Chromium não encontrado no sistema. Instale com: apk add chromium")
 		}
 	}
 
-	// Configurar launcher
+	s.logger.Info().Str("chrome_path", chromePath).Msg("Usando Chrome/Chromium encontrado")
+
+	// Configurar launcher com o caminho do Chrome encontrado
 	l := launcher.New().
+		Bin(chromePath).
 		Headless(s.config.Headless).
 		Leakless(false).
 		Set("disable-gpu").
@@ -475,11 +477,6 @@ func (s *SintegraMAScraper) Initialize() error {
 		Set("disable-web-security").
 		Set("disable-extensions").
 		Set("user-agent", s.config.UserAgent)
-
-	// Se Chrome/Chromium foi encontrado, usar esse caminho
-	if chromePath != "" {
-		l = l.Bin(chromePath)
-	}
 
 	url, err := l.Launch()
 	if err != nil {
