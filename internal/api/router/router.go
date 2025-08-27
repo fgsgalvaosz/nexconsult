@@ -13,13 +13,17 @@ import (
 	_ "nexconsult-sintegra-ma/docs"
 )
 
-// SetupRoutes configura todas as rotas da API
-func SetupRoutes(app *fiber.App, logger zerolog.Logger) {
+// SetupRoutes configura todas as rotas da API e retorna o SintegraService para graceful shutdown
+func SetupRoutes(app *fiber.App, logger zerolog.Logger) *service.SintegraService {
 	// Configurar middlewares globais
 	setupMiddlewares(app)
 
 	// Inicializar serviços
-	sintegraService := service.NewSintegraService(logger)
+	// Usar configuração de timeout padrão
+	sintegraService := service.NewSintegraService(logger, nil)
+
+	// Iniciar worker pool para processamento paralelo
+	sintegraService.StartWorkerPool()
 
 	// Inicializar handlers
 	healthHandler := handlers.NewHealthHandler()
@@ -33,6 +37,8 @@ func SetupRoutes(app *fiber.App, logger zerolog.Logger) {
 
 	// Configurar rotas 404
 	setup404Handler(app)
+
+	return sintegraService
 }
 
 // setupMiddlewares configura middlewares globais
@@ -46,7 +52,8 @@ func setupMiddlewares(app *fiber.App) {
 	// CORS middleware
 	app.Use(middleware.CORSConfig())
 
-	// Rate limiter middleware
+	// Rate limiter middleware - aplicado globalmente
+	// Cada tipo de endpoint terá seu próprio limite conforme configurado no middleware
 	app.Use(middleware.RateLimiterConfig())
 }
 
@@ -133,7 +140,7 @@ func setupBasicRoutes(app *fiber.App, healthHandler *handlers.HealthHandler) {
 				"error": "Arquivo swagger.json não encontrado",
 			})
 		}
-		
+
 		// Configurar headers corretos
 		c.Set("Content-Type", "application/json; charset=utf-8")
 		c.Set("Content-Length", fmt.Sprintf("%d", len(data)))
@@ -143,7 +150,7 @@ func setupBasicRoutes(app *fiber.App, healthHandler *handlers.HealthHandler) {
 		c.Set("Access-Control-Allow-Origin", "*")
 		c.Set("Access-Control-Allow-Methods", "GET, OPTIONS")
 		c.Set("Access-Control-Allow-Headers", "Content-Type")
-		
+
 		// Retornar dados como bytes para garantir integridade
 		return c.Send(data)
 	})
@@ -160,6 +167,8 @@ func setupAPIRoutes(app *fiber.App, sintegraHandler *handlers.SintegraHandler) {
 	// Endpoints do Sintegra
 	sintegra.Post("/consultar", sintegraHandler.ConsultarCNPJ)
 	sintegra.Get("/consultar/:cnpj", sintegraHandler.ConsultarCNPJByPath)
+	sintegra.Post("/consultar-lote", sintegraHandler.ConsultarCNPJEmLote)
+	sintegra.Post("/status", sintegraHandler.VerificarStatusConsulta)
 }
 
 // setup404Handler configura handler para rotas não encontradas

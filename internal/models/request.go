@@ -16,21 +16,21 @@ func (r *SintegraRequest) ValidateCNPJ() bool {
 	cnpj := strings.ReplaceAll(r.CNPJ, ".", "")
 	cnpj = strings.ReplaceAll(cnpj, "/", "")
 	cnpj = strings.ReplaceAll(cnpj, "-", "")
-	
+
 	// Atualiza o CNPJ limpo
 	r.CNPJ = cnpj
-	
+
 	if len(cnpj) != 14 {
 		return false
 	}
-	
+
 	// Verificar se todos são dígitos
 	for _, char := range cnpj {
 		if char < '0' || char > '9' {
 			return false
 		}
 	}
-	
+
 	return true
 }
 

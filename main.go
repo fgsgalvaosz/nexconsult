@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
+	"github.com/go-rod/rod/lib/proto"
 	"github.com/rs/zerolog"
 )
 
@@ -42,7 +43,7 @@ func LoadConfig() *Config {
 
 	config := &Config{
 		SolveCaptchaAPIKey: os.Getenv("SOLVECAPTCHA_API_KEY"),
-		Headless:           false, // Forçando headless false conforme solicitado
+		Headless:           true,              // Temporariamente headless true para debug
 		Timeout:            180 * time.Second, // Reduzindo timeout para evitar travamentos
 		WaitBetweenSteps:   2 * time.Second,
 		UserAgent:          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -210,7 +211,7 @@ func (cs *CaptchaSolver) GetCaptchaResult(taskID string) (string, error) {
 		tempoDecorrido := time.Duration(i) * cs.config.RetryDelay
 		tempoRestante := time.Duration(cs.config.MaxRetries-i) * cs.config.RetryDelay
 		porcentagem := float64(i) / float64(cs.config.MaxRetries) * 100
-		
+
 		cs.logger.Info().
 			Str("task_id", taskID).
 			Int("attempt", i+1).
@@ -251,7 +252,7 @@ func (cs *CaptchaSolver) GetCaptchaResult(taskID string) (string, error) {
 			if result.Status == 1 {
 				cs.logger.Info().
 					Str("task_id", taskID).
-					Str("token_preview", result.Request[:min(10, len(result.Request))] + "...").
+					Str("token_preview", result.Request[:min(10, len(result.Request))]+"...").
 					Msg("CAPTCHA resolvido com sucesso (JSON)")
 				return result.Request, nil
 			}
@@ -278,7 +279,7 @@ func (cs *CaptchaSolver) GetCaptchaResult(taskID string) (string, error) {
 				token = strings.TrimSpace(token)
 				cs.logger.Info().
 					Str("task_id", taskID).
-					Str("token_preview", token[:min(10, len(token))]+ "...").
+					Str("token_preview", token[:min(10, len(token))]+"...").
 					Msg("CAPTCHA resolvido com sucesso (texto)")
 				return token, nil
 			}
@@ -299,7 +300,7 @@ func (cs *CaptchaSolver) GetCaptchaResult(taskID string) (string, error) {
 	}
 
 	tempoTotalDecorrido := time.Duration(cs.config.MaxRetries) * cs.config.RetryDelay
-	return "", fmt.Errorf("timeout na resolução do CAPTCHA após %d tentativas em %v (%.1f minutos)", 
+	return "", fmt.Errorf("timeout na resolução do CAPTCHA após %d tentativas em %v (%.1f minutos)",
 		cs.config.MaxRetries, tempoTotalDecorrido, tempoTotalDecorrido.Minutes())
 }
 
@@ -343,13 +344,13 @@ func (cs *CaptchaSolver) SolveCaptcha(googleKey, pageURL string) (string, error)
 
 // SintegraMAResult representa o resultado da consulta
 type SintegraMAResult struct {
-	CNPJ          string                 `json:"cnpj"`
-	Status        string                 `json:"status"`
-	URL           string                 `json:"url"`
-	Data          *SintegraData          `json:"data"`
-	ExecutionTime time.Duration          `json:"execution_time"`
-	Timestamp     time.Time              `json:"timestamp"`
-	CaptchaSolved bool                   `json:"captcha_solved"`
+	CNPJ          string        `json:"cnpj"`
+	Status        string        `json:"status"`
+	URL           string        `json:"url"`
+	Data          *SintegraData `json:"data"`
+	ExecutionTime time.Duration `json:"execution_time"`
+	Timestamp     time.Time     `json:"timestamp"`
+	CaptchaSolved bool          `json:"captcha_solved"`
 }
 
 // SintegraData representa os dados estruturados da consulta
@@ -364,8 +365,8 @@ type SintegraData struct {
 	Endereco *EnderecoData `json:"endereco"`
 
 	// CNAE
-	CNAEPrincipal   string      `json:"cnae_principal"`
-	CNAESecundarios []CNAEData  `json:"cnae_secundarios"`
+	CNAEPrincipal   string     `json:"cnae_principal"`
+	CNAESecundarios []CNAEData `json:"cnae_secundarios"`
 
 	// Situação
 	SituacaoCadastral     string `json:"situacao_cadastral"`
@@ -375,21 +376,21 @@ type SintegraData struct {
 	Obrigacoes *ObrigacoesData `json:"obrigacoes"`
 
 	// Metadados
-	DataConsulta    string `json:"data_consulta"`
-	NumeroConsulta  string `json:"numero_consulta"`
-	Observacao      string `json:"observacao"`
+	DataConsulta   string `json:"data_consulta"`
+	NumeroConsulta string `json:"numero_consulta"`
+	Observacao     string `json:"observacao"`
 }
 
 type EnderecoData struct {
-	Logradouro   string `json:"logradouro"`
-	Numero       string `json:"numero"`
-	Complemento  string `json:"complemento"`
-	Bairro       string `json:"bairro"`
-	Municipio    string `json:"municipio"`
-	UF           string `json:"uf"`
-	CEP          string `json:"cep"`
-	DDD          string `json:"ddd"`
-	Telefone     string `json:"telefone"`
+	Logradouro  string `json:"logradouro"`
+	Numero      string `json:"numero"`
+	Complemento string `json:"complemento"`
+	Bairro      string `json:"bairro"`
+	Municipio   string `json:"municipio"`
+	UF          string `json:"uf"`
+	CEP         string `json:"cep"`
+	DDD         string `json:"ddd"`
+	Telefone    string `json:"telefone"`
 }
 
 type CNAEData struct {
@@ -428,69 +429,79 @@ func NewSintegraMAScraper(config *Config, logger zerolog.Logger) *SintegraMAScra
 
 // Initialize inicializa o navegador
 func (s *SintegraMAScraper) Initialize() error {
-	s.logger.Info().Msg("Inicializando navegador Chrome (headless=false)")
+	s.logger.Info().Msg("Inicializando navegador Chrome")
 
-	// Tentar encontrar Chrome instalado no sistema primeiro
-	chromePaths := []string{
-		"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-		"C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-	}
+	// Tentar usar Chrome do Puppeteer primeiro
+	l := launcher.New().
+		Bin("/usr/bin/google-chrome-stable").
+		Headless(s.config.Headless).
+		Leakless(false).
+		Set("disable-gpu").
+		Set("no-sandbox").
+		Set("disable-dev-shm-usage").
+		Set("disable-setuid-sandbox").
+		Set("disable-background-timer-throttling").
+		Set("disable-backgrounding-occluded-windows").
+		Set("disable-renderer-backgrounding").
+		Set("disable-features", "VizDisplayCompositor").
+		Set("disable-blink-features", "AutomationControlled").
+		Set("disable-web-security").
+		Set("disable-extensions").
+		Set("user-agent", s.config.UserAgent)
 
-	var chromePath string
-	for _, path := range chromePaths {
-		if _, err := os.Stat(path); err == nil {
-			chromePath = path
-			s.logger.Info().Str("chrome_path", path).Msg("Chrome encontrado no sistema")
-			break
+	url, err := l.Launch()
+	if err != nil {
+		s.logger.Warn().Err(err).Msg("Falha ao usar Chrome do Puppeteer, tentando download automático")
+		
+		// Fallback para download automático
+		l = launcher.New().
+			Headless(s.config.Headless).
+			Leakless(false).
+			Set("disable-gpu").
+			Set("no-sandbox").
+			Set("disable-dev-shm-usage").
+			Set("disable-setuid-sandbox").
+			Set("user-agent", s.config.UserAgent)
+		
+		url, err = l.Launch()
+		if err != nil {
+			return fmt.Errorf("falha ao inicializar navegador: %v", err)
 		}
 	}
 
-	var l *launcher.Launcher
-	if chromePath != "" {
-		// Usar Chrome do sistema
-		l = launcher.New().
-			Bin(chromePath).
-			Leakless(false). // DESABILITAR LEAKLESS
-			Headless(false). // HEADLESS FALSE conforme solicitado
-			Set("disable-gpu").
-			Set("no-sandbox").
-			Set("disable-dev-shm-usage").
-			Set("disable-blink-features", "AutomationControlled").
-			Set("disable-web-security").
-			Set("disable-extensions").
-			Set("user-agent", s.config.UserAgent)
-	} else {
-		// Fallback para Chromium baixado (sem leakless)
-		s.logger.Warn().Msg("Chrome não encontrado, usando Chromium (pode ter problemas com antivírus)")
-		l = launcher.New().
-			Headless(false).
-			Leakless(false). // DESABILITAR LEAKLESS para evitar problema antivírus
-			Set("disable-gpu").
-			Set("no-sandbox").
-			Set("disable-dev-shm-usage").
-			Set("disable-blink-features", "AutomationControlled").
-			Set("disable-web-security").
-			Set("disable-extensions").
-			Set("user-agent", s.config.UserAgent)
-	}
+	s.logger.Info().Str("url", url).Msg("Navegador iniciado com sucesso")
 
-	// Iniciar navegador
-	browser := rod.New().
-		ControlURL(l.MustLaunch()).
-		Timeout(s.config.Timeout).
-		MustConnect()
+	// Conectar ao navegador
+	browser := rod.New().ControlURL(url).Timeout(s.config.Timeout)
+	err = browser.Connect()
+	if err != nil {
+		return fmt.Errorf("falha ao conectar ao navegador: %v", err)
+	}
 
 	s.browser = browser
 
 	// Criar página
-	page := browser.MustPage()
-	page.MustSetViewport(s.config.ViewportWidth, s.config.ViewportHeight, 1, false)
-	s.page = page
+	page, err := browser.Page(proto.TargetCreateTarget{})
+	if err != nil {
+		browser.Close()
+		return fmt.Errorf("falha ao criar página: %v", err)
+	}
 
-	s.logger.Info().Msg("Navegador inicializado com sucesso (modo visível)")
+	err = page.SetViewport(&proto.EmulationSetDeviceMetricsOverride{
+		Width:  s.config.ViewportWidth,
+		Height: s.config.ViewportHeight,
+		DeviceScaleFactor: 1,
+		Mobile: false,
+	})
+	if err != nil {
+		browser.Close()
+		return fmt.Errorf("falha ao configurar viewport: %v", err)
+	}
+
+	s.page = page
+	s.logger.Info().Msg("Navegador inicializado com sucesso")
 	return nil
 }
-
 // ConsultarCNPJ executa a consulta completa
 func (s *SintegraMAScraper) ConsultarCNPJ(cnpj string) error {
 	start := time.Now()
@@ -536,7 +547,7 @@ func (s *SintegraMAScraper) ConsultarCNPJ(cnpj string) error {
 
 	// Clique no botão real do form (padrão solver)
 	s.logger.Info().Msg("🎯 Clicando no botão de consulta")
-	
+
 	// Seletores otimizados (ordem de prioridade) - conforme teste Playwright
 	btnSelector := "#form1\\:pnlPrincipal4 input:nth-of-type(2), form#form1 button[type=submit], #botaoConsultar, button[type=submit]"
 	btn, err := s.page.Timeout(15 * time.Second).Element(btnSelector)
@@ -544,26 +555,26 @@ func (s *SintegraMAScraper) ConsultarCNPJ(cnpj string) error {
 		s.logger.Warn().Err(err).Msg("⚠ Botão não encontrado")
 		return fmt.Errorf("botão de submit não encontrado")
 	}
-	
+
 	// Aguardar um pouco antes do clique para garantir que o reCAPTCHA foi processado
 	time.Sleep(1 * time.Second)
-	
+
 	// Verificar se a página ainda está responsiva antes do clique
 	pageReady := s.page.MustEval(`() => {
 		return document.readyState === 'complete' && !document.querySelector('.loading');
 	}`).Bool()
 	s.logger.Info().Bool("page_ready", pageReady).Msg("Estado da página antes do clique")
-	
+
 	// Verificar se o botão está visível e clicável
 	btnVisible := btn.MustVisible()
 	btnEnabled := btn.MustEval(`() => !this.disabled`).Bool()
 	s.logger.Info().Bool("btn_visible", btnVisible).Bool("btn_enabled", btnEnabled).Msg("Estado do botão")
-	
+
 	if !btnVisible || !btnEnabled {
 		s.logger.Warn().Msg("Botão não está visível ou habilitado, aguardando...")
 		time.Sleep(2 * time.Second)
 	}
-	
+
 	// Clicar no botão com timeout customizado
 	s.logger.Info().Msg("Executando clique no botão...")
 	// Tentar clique direto primeiro
@@ -580,7 +591,7 @@ func (s *SintegraMAScraper) ConsultarCNPJ(cnpj string) error {
 	// Aguardar especificamente pela página de resultados (baseado no teste Playwright)
 	urlEsperada := "https://sistemas1.sefaz.ma.gov.br/sintegra/jsp/consultaSintegra/consultaSintegraResultadoListaConsulta.jsf"
 	s.logger.Info().Str("url_esperada", urlEsperada).Msg("🔍 Aguardando página de resultados...")
-	
+
 	// Aguardar até 10 segundos pela mudança de URL
 	for i := 0; i < 20; i++ {
 		urlAtual := s.page.MustInfo().URL
@@ -588,7 +599,7 @@ func (s *SintegraMAScraper) ConsultarCNPJ(cnpj string) error {
 			s.logger.Info().Str("url_resultado", urlAtual).Msg("✓ Página de resultados carregada!")
 			break
 		}
-		
+
 		if i == 19 {
 			// Última tentativa - verificar se há mensagens de erro na página
 			errorMsg := s.page.MustEval(`() => {
@@ -602,11 +613,11 @@ func (s *SintegraMAScraper) ConsultarCNPJ(cnpj string) error {
 				}
 				return 'Nenhuma mensagem de erro encontrada';
 			}`).String()
-			
+
 			s.logger.Warn().Str("error_check", errorMsg).Str("url_atual", urlAtual).Msg("⚠ Página de resultados não carregou")
 			return fmt.Errorf("página de resultado não carregada após 10s. URL atual: %s", urlAtual)
 		}
-		
+
 		time.Sleep(500 * time.Millisecond)
 	}
 
@@ -685,7 +696,7 @@ func (s *SintegraMAScraper) resolverRecaptcha() error {
 
 	// Injetar token seguindo padrão dos solvers (2Captcha, CapMonster, etc)
 	s.logger.Info().Str("token_preview", token[:min(20, len(token))]+"...").Int("token_length", len(token)).Msg("🔍 Iniciando injeção (padrão solver)")
-	
+
 	// Injetar token com segurança no contexto do elemento e disparar eventos
 	res, err := responseElement.Eval(`(token) => {
 		if (typeof token !== 'string' || token.length === 0) {
@@ -751,7 +762,7 @@ func (s *SintegraMAScraper) resolverRecaptcha() error {
 	// Verificar retorno do Eval
 	resultStr := res.Value.String()
 	s.logger.Info().Str("eval_result", resultStr).Msg("Resultado da injeção")
-	
+
 	// Se contém "ok":true ou ok:true ou injected, foi sucesso
 	if strings.Contains(resultStr, `"ok":true`) || strings.Contains(resultStr, `ok:true`) || strings.Contains(resultStr, `injected`) {
 		s.logger.Info().Msg("✓ Token injetado com sucesso (padrão solver)")
@@ -1055,7 +1066,7 @@ func main() {
 	fmt.Printf("URL: %s\n", resultado.URL)
 	fmt.Printf("CAPTCHA Resolvido: %v\n", resultado.CaptchaSolved)
 	fmt.Printf("Tempo de execução: %v\n", resultado.ExecutionTime)
-	
+
 	if resultado.Data != nil {
 		fmt.Printf("\n=== DADOS ESTRUTURADOS ===\n")
 		fmt.Printf("┌────────────────────────────────────────────────────────────────────────────────┐\n")
@@ -1067,12 +1078,12 @@ func main() {
 		fmt.Printf("│ Regime: %-63s │\n", truncateString(resultado.Data.RegimeApuracao, 63))
 		fmt.Printf("│ Situação: %-61s │\n", truncateString(resultado.Data.SituacaoCadastral, 61))
 		fmt.Printf("│ Data Situação: %-56s │\n", resultado.Data.DataSituacaoCadastral)
-		
+
 		if resultado.Data.Endereco != nil {
 			fmt.Printf("├────────────────────────────────────────────────────────────────────────────────┤\n")
 			fmt.Printf("│ ENDEREÇO%69s │\n", "")
 			fmt.Printf("├────────────────────────────────────────────────────────────────────────────────┤\n")
-			fmt.Printf("│ %s, %s - %s%*s │\n", 
+			fmt.Printf("│ %s, %s - %s%*s │\n",
 				truncateString(resultado.Data.Endereco.Logradouro, 30),
 				resultado.Data.Endereco.Numero,
 				truncateString(resultado.Data.Endereco.Bairro, 25),
@@ -1088,13 +1099,13 @@ func main() {
 					maxInt(0, 79-len(resultado.Data.Endereco.Telefone)-11), "")
 			}
 		}
-		
+
 		fmt.Printf("├────────────────────────────────────────────────────────────────────────────────┤\n")
 		fmt.Printf("│ ATIVIDADES%68s │\n", "")
 		fmt.Printf("├────────────────────────────────────────────────────────────────────────────────┤\n")
 		fmt.Printf("│ CNAE Principal: %-55s │\n", truncateString(resultado.Data.CNAEPrincipal, 55))
 		fmt.Printf("│ CNAEs Secundários: %-52d │\n", len(resultado.Data.CNAESecundarios))
-		
+
 		if resultado.Data.Obrigacoes != nil {
 			fmt.Printf("├────────────────────────────────────────────────────────────────────────────────┤\n")
 			fmt.Printf("│ OBRIGAÇÕES%67s │\n", "")
@@ -1103,7 +1114,7 @@ func main() {
 			fmt.Printf("│ EDF a partir de: %-54s │\n", truncateString(resultado.Data.Obrigacoes.EDFAPartirDe, 54))
 			fmt.Printf("│ CTE a partir de: %-54s │\n", truncateString(resultado.Data.Obrigacoes.CTEAPartirDe, 54))
 		}
-		
+
 		fmt.Printf("├────────────────────────────────────────────────────────────────────────────────┤\n")
 		fmt.Printf("│ METADADOS%68s │\n", "")
 		fmt.Printf("├────────────────────────────────────────────────────────────────────────────────┤\n")
@@ -1111,7 +1122,7 @@ func main() {
 		fmt.Printf("│ Número Consulta: %-54s │\n", resultado.Data.NumeroConsulta)
 		fmt.Printf("└────────────────────────────────────────────────────────────────────────────────┘\n")
 	}
-	
+
 	fmt.Printf("\nArquivo salvo: %s\n", filename)
 
 	logger.Info().Msg("Consulta Sintegra MA concluída com sucesso!")

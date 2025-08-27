@@ -25,11 +25,11 @@ func NewHealthHandler() *HealthHandler {
 // @Description Verifica o status de saúde da API, tempo de atividade e versão
 // @Tags System
 // @Produce json
-// @Success 200 {object} models.APIResponse{data=models.HealthResponse} "API funcionando corretamente"
+// @Success 200 {object} models.StandardResponse{data=models.HealthResponse} "API funcionando corretamente"
 // @Router /health [get]
 func (h *HealthHandler) HealthCheck(c *fiber.Ctx) error {
 	uptime := time.Since(h.startTime)
-	
+
 	healthData := models.HealthResponse{
 		Status:  "healthy",
 		Service: "nexconsult-sintegra-ma",
@@ -37,12 +37,7 @@ func (h *HealthHandler) HealthCheck(c *fiber.Ctx) error {
 		Uptime:  uptime.String(),
 	}
 
-	return c.JSON(models.APIResponse{
-		Success: true,
-		Message: "API Sintegra MA está funcionando",
-		Data:    healthData,
-		Timestamp: time.Now(),
-	})
+	return c.JSON(models.NewSuccessResponse("API Sintegra MA está funcionando", healthData))
 }
 
 // Welcome exibe informações básicas da API
@@ -50,7 +45,7 @@ func (h *HealthHandler) HealthCheck(c *fiber.Ctx) error {
 // @Description Exibe informações básicas sobre a API, endpoints disponíveis e exemplos de uso
 // @Tags System
 // @Produce json
-// @Success 200 {object} models.APIResponse "Informações da API"
+// @Success 200 {object} models.StandardResponse "Informações da API"
 // @Router / [get]
 func (h *HealthHandler) Welcome(c *fiber.Ctx) error {
 	port := os.Getenv("PORT")
@@ -76,15 +71,15 @@ func (h *HealthHandler) Welcome(c *fiber.Ctx) error {
 				"GET /swagger/": "Interface Swagger UI",
 			},
 			"sintegra": map[string]string{
-				"POST /api/v1/sintegra/consultar": "Consultar CNPJ (JSON body)",
+				"POST /api/v1/sintegra/consultar":      "Consultar CNPJ (JSON body)",
 				"GET /api/v1/sintegra/consultar/:cnpj": "Consultar CNPJ via URL",
 			},
 		},
 		"example_usage": map[string]interface{}{
 			"post_request": map[string]string{
-				"method": "POST",
-				"url":    baseURL + "/api/v1/sintegra/consultar",
-				"body":   `{"cnpj": "38139407000177"}`,
+				"method":  "POST",
+				"url":     baseURL + "/api/v1/sintegra/consultar",
+				"body":    `{"cnpj": "38139407000177"}`,
 				"headers": "Content-Type: application/json",
 			},
 			"get_request": map[string]string{
@@ -94,12 +89,7 @@ func (h *HealthHandler) Welcome(c *fiber.Ctx) error {
 		},
 	}
 
-	return c.JSON(models.APIResponse{
-		Success:   true,
-		Message:   "Bem-vindo à API do Sintegra MA",
-		Data:      info,
-		Timestamp: time.Now(),
-	})
+	return c.JSON(models.NewSuccessResponse("Bem-vindo à API do Sintegra MA", info))
 }
 
 // Docs exibe documentação detalhada da API
@@ -107,7 +97,7 @@ func (h *HealthHandler) Welcome(c *fiber.Ctx) error {
 // @Description Documentação detalhada dos endpoints disponíveis, formatos de resposta e exemplos
 // @Tags System
 // @Produce json
-// @Success 200 {object} models.APIResponse "Documentação completa da API"
+// @Success 200 {object} models.StandardResponse "Documentação completa da API"
 // @Router /docs [get]
 func (h *HealthHandler) Docs(c *fiber.Ctx) error {
 	docs := map[string]interface{}{
@@ -146,9 +136,9 @@ func (h *HealthHandler) Docs(c *fiber.Ctx) error {
 			},
 		},
 		"rate_limits": map[string]string{
-			"limit":      "10 requisições por minuto por IP",
-			"policy":     "Rate limiting baseado em IP",
-			"exceeded":   "HTTP 429 - Too Many Requests",
+			"limit":    "10 requisições por minuto por IP",
+			"policy":   "Rate limiting baseado em IP",
+			"exceeded": "HTTP 429 - Too Many Requests",
 		},
 		"response_format": map[string]interface{}{
 			"success": map[string]interface{}{
@@ -165,10 +155,5 @@ func (h *HealthHandler) Docs(c *fiber.Ctx) error {
 		},
 	}
 
-	return c.JSON(models.APIResponse{
-		Success:   true,
-		Message:   "Documentação da API",
-		Data:      docs,
-		Timestamp: time.Now(),
-	})
+	return c.JSON(models.NewSuccessResponse("Documentação da API", docs))
 }

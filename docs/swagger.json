@@ -36,7 +36,7 @@
                     "200": {
                         "description": "Informações da API",
                         "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
+                            "$ref": "#/definitions/models.StandardResponse"
                         }
                     }
                 }
@@ -72,7 +72,7 @@
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/models.APIResponse"
+                                    "$ref": "#/definitions/models.StandardResponse"
                                 },
                                 {
                                     "type": "object",
@@ -88,58 +88,61 @@
                     "400": {
                         "description": "Requisição inválida",
                         "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
+                            "$ref": "#/definitions/models.StandardResponse"
                         }
                     },
                     "429": {
                         "description": "Rate limit excedido",
                         "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
+                            "$ref": "#/definitions/models.StandardResponse"
                         }
                     },
                     "500": {
                         "description": "Erro interno do servidor",
                         "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
+                            "$ref": "#/definitions/models.StandardResponse"
                         }
                     }
                 }
             }
         },
-        "/api/v1/sintegra/consultar/{cnpj}": {
-            "get": {
-                "description": "Executa consulta automatizada no Sintegra MA passando CNPJ diretamente na URL",
+        "/api/v1/sintegra/consultar-lote": {
+            "post": {
+                "description": "Executa consulta automatizada em lote no Sintegra MA para múltiplos CNPJs simultaneamente",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Sintegra"
                 ],
-                "summary": "Consultar CNPJ via URL",
+                "summary": "Consultar múltiplos CNPJs em lote",
                 "parameters": [
                     {
-                        "maxLength": 14,
-                        "minLength": 14,
-                        "type": "string",
-                        "description": "CNPJ (14 dígitos numéricos)",
-                        "name": "cnpj",
-                        "in": "path",
-                        "required": true
+                        "description": "Lista de CNPJs para consulta em lote (máximo 10)",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.BatchSintegraRequest"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Consulta realizada com sucesso",
+                        "description": "Consulta em lote realizada com sucesso",
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/models.APIResponse"
+                                    "$ref": "#/definitions/models.StandardResponse"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/models.SintegraResponse"
+                                            "$ref": "#/definitions/models.BatchSintegraResponse"
                                         }
                                     }
                                 }
@@ -147,21 +150,79 @@
                         }
                     },
                     "400": {
-                        "description": "CNPJ inválido ou não informado",
+                        "description": "Requisição inválida ou CNPJs inválidos",
                         "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
+                            "$ref": "#/definitions/models.StandardResponse"
                         }
                     },
                     "429": {
                         "description": "Rate limit excedido",
                         "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
+                            "$ref": "#/definitions/models.StandardResponse"
                         }
                     },
                     "500": {
                         "description": "Erro interno do servidor",
                         "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
+                            "$ref": "#/definitions/models.StandardResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/sintegra/status": {
+            "post": {
+                "description": "Verifica se uma consulta de CNPJ está em andamento ou concluída",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sintegra"
+                ],
+                "summary": "Verifica o status de uma consulta de CNPJ",
+                "parameters": [
+                    {
+                        "description": "CNPJ para verificar status",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.StatusRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Status da consulta",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.StandardResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.StatusResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Requisição inválida",
+                        "schema": {
+                            "$ref": "#/definitions/models.StandardResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Erro interno do servidor",
+                        "schema": {
+                            "$ref": "#/definitions/models.StandardResponse"
                         }
                     }
                 }
@@ -181,7 +242,7 @@
                     "200": {
                         "description": "Documentação completa da API",
                         "schema": {
-                            "$ref": "#/definitions/models.APIResponse"
+                            "$ref": "#/definitions/models.StandardResponse"
                         }
                     }
                 }
@@ -203,7 +264,7 @@
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/models.APIResponse"
+                                    "$ref": "#/definitions/models.StandardResponse"
                                 },
                                 {
                                     "type": "object",
@@ -221,32 +282,80 @@
         }
     },
     "definitions": {
-        "models.APIResponse": {
-            "description": "Estrutura padrão de resposta para todos os endpoints",
+        "models.BatchSintegraRequest": {
+            "description": "Estrutura de dados para requisição de consulta em lote de CNPJs",
+            "type": "object",
+            "required": [
+                "cnpjs"
+            ],
+            "properties": {
+                "cnpjs": {
+                    "description": "Lista de CNPJs para consulta (cada CNPJ deve ter 14 dígitos numéricos)\n@example [\"38139407000177\",\"27394162000170\"]",
+                    "type": "array",
+                    "maxItems": 10,
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "[\"38139407000177\"",
+                        "\"27394162000170\"]"
+                    ]
+                }
+            }
+        },
+        "models.BatchSintegraResponse": {
+            "description": "Dados estruturados retornados pela consulta em lote no Sintegra MA",
             "type": "object",
             "properties": {
-                "data": {
-                    "description": "Dados retornados pela operação"
+                "error_count": {
+                    "description": "Número de consultas com erro\n@example 1",
+                    "type": "integer",
+                    "example": 1
                 },
-                "error": {
-                    "description": "Mensagem de erro (apenas em caso de falha)\n@example \"CNPJ inválido\"",
+                "errors": {
+                    "description": "Erros das consultas que falharam\nMapa onde a chave é o CNPJ e o valor é a mensagem de erro",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "execution_time": {
+                    "description": "Tempo total de execução do lote (formato: \"45s\" ou \"2m30s\")\n@example \"1m15s\"",
                     "type": "string",
-                    "example": "CNPJ inválido"
+                    "example": "1m15s"
                 },
-                "message": {
-                    "description": "Mensagem explicativa da operação (apenas em caso de sucesso)\n@example \"Consulta realizada com sucesso\"",
-                    "type": "string",
-                    "example": "Consulta realizada com sucesso"
+                "invalid_cnpjs": {
+                    "description": "Lista de CNPJs inválidos que não foram processados\n@example [\"123456\"]",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "[\"123456\"]"
+                    ]
                 },
-                "success": {
-                    "description": "Indica se a operação foi bem-sucedida\n@example true",
-                    "type": "boolean",
-                    "example": true
+                "results": {
+                    "description": "Resultados das consultas bem-sucedidas\nMapa onde a chave é o CNPJ e o valor é o resultado da consulta",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/models.SintegraResponse"
+                    }
+                },
+                "success_count": {
+                    "description": "Número de consultas bem-sucedidas\n@example 2",
+                    "type": "integer",
+                    "example": 2
                 },
                 "timestamp": {
-                    "description": "Timestamp da resposta em formato ISO 8601\n@example \"2025-08-25T17:25:30.468715-03:00\"",
+                    "description": "Timestamp da consulta\n@example \"2025-08-25T17:25:30.468715-03:00\"",
                     "type": "string",
                     "example": "2025-08-25T17:25:30.468715-03:00"
+                },
+                "total": {
+                    "description": "Número total de CNPJs processados\n@example 3",
+                    "type": "integer",
+                    "example": 3
                 }
             }
         },
@@ -293,6 +402,24 @@
                 }
             }
         },
+        "models.ErrorDetails": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "description": "Código do erro\n@example \"INVALID_CNPJ\"",
+                    "type": "string",
+                    "example": "INVALID_CNPJ"
+                },
+                "details": {
+                    "description": "Detalhes adicionais do erro"
+                },
+                "message": {
+                    "description": "Mensagem do erro\n@example \"CNPJ inválido. Deve conter 14 dígitos\"",
+                    "type": "string",
+                    "example": "CNPJ inválido. Deve conter 14 dígitos"
+                }
+            }
+        },
         "models.HealthResponse": {
             "type": "object",
             "properties": {
@@ -321,6 +448,31 @@
                 },
                 "nfe_a_partir_de": {
                     "type": "string"
+                }
+            }
+        },
+        "models.ResponseMeta": {
+            "type": "object",
+            "properties": {
+                "execution_time": {
+                    "description": "Tempo de execução da operação\n@example \"1.234s\"",
+                    "type": "string",
+                    "example": "1.234s"
+                },
+                "request_id": {
+                    "description": "ID da requisição para rastreamento\n@example \"req_123456789\"",
+                    "type": "string",
+                    "example": "req_123456789"
+                },
+                "timestamp": {
+                    "description": "Timestamp da resposta em formato ISO 8601\n@example \"2025-08-25T17:25:30.468715-03:00\"",
+                    "type": "string",
+                    "example": "2025-08-25T17:25:30.468715-03:00"
+                },
+                "version": {
+                    "description": "Versão da API\n@example \"v1\"",
+                    "type": "string",
+                    "example": "v1"
                 }
             }
         },
@@ -426,6 +578,78 @@
                     "description": "URL da página de resultado no Sintegra\n@example \"https://sistemas1.sefaz.ma.gov.br/sintegra/...\"",
                     "type": "string",
                     "example": "https://sistemas1.sefaz.ma.gov.br/sintegra/..."
+                }
+            }
+        },
+        "models.StandardResponse": {
+            "description": "Estrutura padrão unificada de resposta para todos os endpoints",
+            "type": "object",
+            "properties": {
+                "data": {
+                    "description": "Dados retornados pela operação (apenas quando status = success)"
+                },
+                "error": {
+                    "description": "Detalhes do erro (apenas quando status = error)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.ErrorDetails"
+                        }
+                    ]
+                },
+                "message": {
+                    "description": "Mensagem descritiva da operação\n@example \"Consulta realizada com sucesso\"",
+                    "type": "string",
+                    "example": "Consulta realizada com sucesso"
+                },
+                "meta": {
+                    "description": "Metadados da resposta",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.ResponseMeta"
+                        }
+                    ]
+                },
+                "status": {
+                    "description": "Status da operação (success, error, warning, info)\n@example \"success\"",
+                    "type": "string",
+                    "example": "success"
+                }
+            }
+        },
+        "models.StatusRequest": {
+            "type": "object",
+            "required": [
+                "cnpj"
+            ],
+            "properties": {
+                "cnpj": {
+                    "description": "CNPJ da empresa para verificar status",
+                    "type": "string"
+                }
+            }
+        },
+        "models.StatusResponse": {
+            "type": "object",
+            "properties": {
+                "cnpj": {
+                    "description": "CNPJ consultado",
+                    "type": "string"
+                },
+                "mensagem": {
+                    "description": "Mensagem adicional sobre o status",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "Status da consulta (em_andamento, concluida, erro, nao_encontrada)",
+                    "type": "string"
+                },
+                "tempo_estimado": {
+                    "description": "Tempo estimado para conclusão (em segundos), apenas quando status=em_andamento",
+                    "type": "integer"
+                },
+                "timestamp": {
+                    "description": "Timestamp da verificação",
+                    "type": "string"
                 }
             }
         }

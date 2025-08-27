@@ -1,0 +1,46 @@
+version: "3.7"
+
+services:
+
+## --------------------------- NEXCONSULT --------------------------- ##
+
+  nexconsult:
+    image: felipyfgs17/nexconsult-sintegra-ma:latest ## Imagem da aplicação
+    
+
+    
+
+    
+    networks:
+      - Gacont ## Nome da rede interna
+    
+    environment:
+      ## Configurações da aplicação
+      - PORT=8080
+      - GIN_MODE=release
+      - CHROME_BIN=/usr/bin/chromium-browser
+      - CHROME_PATH=/usr/bin/chromium-browser
+      - DISPLAY=:99
+      - SOLVECAPTCHA_API_KEY=bd238cb2bace2dd234e32a8df23486f1
+    
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.nexconsult.rule=Host(`nexconsult.gacont.com.br`)"
+        - "traefik.http.routers.nexconsult.entrypoints=web"
+        - "traefik.http.services.nexconsult.loadbalancer.server.port=8080"
+        - "traefik.docker.network=Gacont"
+    
+
+
+## --------------------------- NEXCONSULT --------------------------- ##
+
+networks:
+  Gacont: ## Nome da rede interna
+    external: true
+    name: Gacont ## Nome da rede interna

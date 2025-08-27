@@ -1,0 +1,70 @@
+# Binários
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Arquivos de teste
+*_test.go
+*.test
+*.prof
+
+# Dependências
+vendor/
+
+# Arquivos de desenvolvimento
+.git/
+.gitignore
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# Arquivos temporários
+tmp/
+temp/
+*.tmp
+
+# Arquivos de resultado
+resultado_files/
+
+# Documentação
+README.md
+docs/
+*.md
+
+# Arquivos de configuração local
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Cache
+.cache/
+
+# Node modules (se houver frontend)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Outros
+*.DS_Store
+Thumbs.db

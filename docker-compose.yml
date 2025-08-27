@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  nexconsult:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nexconsult-sintegra-ma:latest
+    container_name: nexconsult
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - GIN_MODE=release
+      - CHROME_BIN=/usr/bin/chromium-browser
+      - CHROME_PATH=/usr/bin/chromium-browser
+      - DISPLAY=:99
+    volumes:
+      - ./logs:/app/logs
+      - ./resultado_files:/app/resultado_files
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  default:
+    driver: bridge

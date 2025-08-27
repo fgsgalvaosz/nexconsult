@@ -17,9 +17,11 @@ import (
 	"nexconsult-sintegra-ma/internal/api/middleware"
 	"nexconsult-sintegra-ma/internal/api/router"
 	"nexconsult-sintegra-ma/internal/logger"
+	"nexconsult-sintegra-ma/internal/service"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/rs/zerolog"
@@ -46,8 +48,8 @@ func main() {
 	// Configurar aplicação Fiber
 	app := setupFiberApp()
 
-	// Configurar rotas
-	router.SetupRoutes(app, appLogger)
+	// Configurar rotas e obter referência do serviço para graceful shutdown
+	sintegraService := router.SetupRoutes(app, appLogger)
 
 	// Log de inicialização
 	appLogger.Info().
@@ -70,7 +72,7 @@ func main() {
 	printServerInfo(host, port)
 
 	// Aguardar sinal de shutdown
-	waitForShutdown(app, appLogger)
+	waitForShutdown(app, sintegraService, appLogger)
 }
 
 // setupFiberApp configura a aplicação Fiber com settings otimizados
@@ -86,10 +88,11 @@ func setupFiberApp() *fiber.App {
 		// Configurações de limite
 		BodyLimit: 4 * 1024 * 1024, // 4MB
 
-		// Configurações de timeout
-		ReadTimeout:  60 * 1000,  // 60 segundos em milissegundos
-		WriteTimeout: 60 * 1000,  // 60 segundos em milissegundos
-		IdleTimeout:  120 * 1000, // 120 segundos em milissegundos
+		// Configurações de timeout otimizadas
+		// Aumentado para lidar com consultas longas ao Sintegra
+		ReadTimeout:  240 * time.Second, // 4 minutos
+		WriteTimeout: 240 * time.Second, // 4 minutos
+		IdleTimeout:  600 * time.Second, // 10 minutos
 
 		// Error handler personalizado
 		ErrorHandler: middleware.ErrorHandler(),
@@ -104,7 +107,7 @@ func printServerInfo(host, port string) {
 	fmt.Println("╔════════════════════════════════════════════════════════════════════════════════╗")
 	fmt.Println("║                      🚀 NEXCONSULT SINTEGRA MA API 🚀                          ║")
 	fmt.Println("╠════════════════════════════════════════════════════════════════════════════════╣")
-	
+
 	localAddr := fmt.Sprintf("http://localhost:%s", port)
 	if host != "127.0.0.1" && host != "localhost" {
 		fmt.Printf("║ 🌐 Servidor:     http://%s:%s%s║\n", host, port, getSpacing(fmt.Sprintf("http://%s:%s", host, port)))
@@ -146,15 +149,18 @@ func getSpacing(text string) string {
 }
 
 // waitForShutdown aguarda sinal de shutdown e encerra gracefully
-func waitForShutdown(app *fiber.App, appLogger zerolog.Logger) {
+func waitForShutdown(app *fiber.App, sintegraService *service.SintegraService, appLogger zerolog.Logger) {
 	// Criar channel para capturar sinais do OS
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 
 	// Aguardar sinal
 	<-quit
-	
+
 	appLogger.Info().Msg("🛑 Sinal de shutdown recebido...")
+
+	// Parar worker pool primeiro
+	sintegraService.StopWorkerPool()
 
 	// Encerrar aplicação
 	if err := app.Shutdown(); err != nil {

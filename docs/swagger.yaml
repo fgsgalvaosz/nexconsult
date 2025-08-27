@@ -1,34 +1,79 @@
 basePath: /
 definitions:
-  models.APIResponse:
-    description: Estrutura padrão de resposta para todos os endpoints
+  models.BatchSintegraRequest:
+    description: Estrutura de dados para requisição de consulta em lote de CNPJs
     properties:
-      data:
-        description: Dados retornados pela operação
-      error:
+      cnpjs:
         description: |-
-          Mensagem de erro (apenas em caso de falha)
-          @example "CNPJ inválido"
-        example: CNPJ inválido
+          Lista de CNPJs para consulta (cada CNPJ deve ter 14 dígitos numéricos)
+          @example ["38139407000177","27394162000170"]
+        example:
+        - '["38139407000177"'
+        - '"27394162000170"]'
+        items:
+          type: string
+        maxItems: 10
+        minItems: 1
+        type: array
+    required:
+    - cnpjs
+    type: object
+  models.BatchSintegraResponse:
+    description: Dados estruturados retornados pela consulta em lote no Sintegra MA
+    properties:
+      error_count:
+        description: |-
+          Número de consultas com erro
+          @example 1
+        example: 1
+        type: integer
+      errors:
+        additionalProperties:
+          type: string
+        description: |-
+          Erros das consultas que falharam
+          Mapa onde a chave é o CNPJ e o valor é a mensagem de erro
+        type: object
+      execution_time:
+        description: |-
+          Tempo total de execução do lote (formato: "45s" ou "2m30s")
+          @example "1m15s"
+        example: 1m15s
         type: string
-      message:
+      invalid_cnpjs:
         description: |-
-          Mensagem explicativa da operação (apenas em caso de sucesso)
-          @example "Consulta realizada com sucesso"
-        example: Consulta realizada com sucesso
-        type: string
-      success:
+          Lista de CNPJs inválidos que não foram processados
+          @example ["123456"]
+        example:
+        - '["123456"]'
+        items:
+          type: string
+        type: array
+      results:
+        additionalProperties:
+          $ref: '#/definitions/models.SintegraResponse'
         description: |-
-          Indica se a operação foi bem-sucedida
-          @example true
-        example: true
-        type: boolean
+          Resultados das consultas bem-sucedidas
+          Mapa onde a chave é o CNPJ e o valor é o resultado da consulta
+        type: object
+      success_count:
+        description: |-
+          Número de consultas bem-sucedidas
+          @example 2
+        example: 2
+        type: integer
       timestamp:
         description: |-
-          Timestamp da resposta em formato ISO 8601
+          Timestamp da consulta
           @example "2025-08-25T17:25:30.468715-03:00"
         example: "2025-08-25T17:25:30.468715-03:00"
         type: string
+      total:
+        description: |-
+          Número total de CNPJs processados
+          @example 3
+        example: 3
+        type: integer
     type: object
   models.CNAEData:
     properties:
@@ -58,6 +103,23 @@ definitions:
       uf:
         type: string
     type: object
+  models.ErrorDetails:
+    properties:
+      code:
+        description: |-
+          Código do erro
+          @example "INVALID_CNPJ"
+        example: INVALID_CNPJ
+        type: string
+      details:
+        description: Detalhes adicionais do erro
+      message:
+        description: |-
+          Mensagem do erro
+          @example "CNPJ inválido. Deve conter 14 dígitos"
+        example: CNPJ inválido. Deve conter 14 dígitos
+        type: string
+    type: object
   models.HealthResponse:
     properties:
       service:
@@ -76,6 +138,33 @@ definitions:
       edf_a_partir_de:
         type: string
       nfe_a_partir_de:
+        type: string
+    type: object
+  models.ResponseMeta:
+    properties:
+      execution_time:
+        description: |-
+          Tempo de execução da operação
+          @example "1.234s"
+        example: 1.234s
+        type: string
+      request_id:
+        description: |-
+          ID da requisição para rastreamento
+          @example "req_123456789"
+        example: req_123456789
+        type: string
+      timestamp:
+        description: |-
+          Timestamp da resposta em formato ISO 8601
+          @example "2025-08-25T17:25:30.468715-03:00"
+        example: "2025-08-25T17:25:30.468715-03:00"
+        type: string
+      version:
+        description: |-
+          Versão da API
+          @example "v1"
+        example: v1
         type: string
     type: object
   models.SintegraData:
@@ -165,6 +254,58 @@ definitions:
         example: https://sistemas1.sefaz.ma.gov.br/sintegra/...
         type: string
     type: object
+  models.StandardResponse:
+    description: Estrutura padrão unificada de resposta para todos os endpoints
+    properties:
+      data:
+        description: Dados retornados pela operação (apenas quando status = success)
+      error:
+        allOf:
+        - $ref: '#/definitions/models.ErrorDetails'
+        description: Detalhes do erro (apenas quando status = error)
+      message:
+        description: |-
+          Mensagem descritiva da operação
+          @example "Consulta realizada com sucesso"
+        example: Consulta realizada com sucesso
+        type: string
+      meta:
+        allOf:
+        - $ref: '#/definitions/models.ResponseMeta'
+        description: Metadados da resposta
+      status:
+        description: |-
+          Status da operação (success, error, warning, info)
+          @example "success"
+        example: success
+        type: string
+    type: object
+  models.StatusRequest:
+    properties:
+      cnpj:
+        description: CNPJ da empresa para verificar status
+        type: string
+    required:
+    - cnpj
+    type: object
+  models.StatusResponse:
+    properties:
+      cnpj:
+        description: CNPJ consultado
+        type: string
+      mensagem:
+        description: Mensagem adicional sobre o status
+        type: string
+      status:
+        description: Status da consulta (em_andamento, concluida, erro, nao_encontrada)
+        type: string
+      tempo_estimado:
+        description: Tempo estimado para conclusão (em segundos), apenas quando status=em_andamento
+        type: integer
+      timestamp:
+        description: Timestamp da verificação
+        type: string
+    type: object
 host: localhost:3000
 info:
   contact:
@@ -190,7 +331,7 @@ paths:
         "200":
           description: Informações da API
           schema:
-            $ref: '#/definitions/models.APIResponse'
+            $ref: '#/definitions/models.StandardResponse'
       summary: API Information
       tags:
       - System
@@ -214,7 +355,7 @@ paths:
           description: Consulta realizada com sucesso
           schema:
             allOf:
-            - $ref: '#/definitions/models.APIResponse'
+            - $ref: '#/definitions/models.StandardResponse'
             - properties:
                 data:
                   $ref: '#/definitions/models.SintegraResponse'
@@ -222,55 +363,91 @@ paths:
         "400":
           description: Requisição inválida
           schema:
-            $ref: '#/definitions/models.APIResponse'
+            $ref: '#/definitions/models.StandardResponse'
         "429":
           description: Rate limit excedido
           schema:
-            $ref: '#/definitions/models.APIResponse'
+            $ref: '#/definitions/models.StandardResponse'
         "500":
           description: Erro interno do servidor
           schema:
-            $ref: '#/definitions/models.APIResponse'
+            $ref: '#/definitions/models.StandardResponse'
       summary: Consultar CNPJ no Sintegra MA
       tags:
       - Sintegra
-  /api/v1/sintegra/consultar/{cnpj}:
-    get:
-      description: Executa consulta automatizada no Sintegra MA passando CNPJ diretamente
-        na URL
+  /api/v1/sintegra/consultar-lote:
+    post:
+      consumes:
+      - application/json
+      description: Executa consulta automatizada em lote no Sintegra MA para múltiplos
+        CNPJs simultaneamente
       parameters:
-      - description: CNPJ (14 dígitos numéricos)
-        in: path
-        maxLength: 14
-        minLength: 14
-        name: cnpj
+      - description: Lista de CNPJs para consulta em lote (máximo 10)
+        in: body
+        name: request
         required: true
-        type: string
+        schema:
+          $ref: '#/definitions/models.BatchSintegraRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: Consulta realizada com sucesso
+          description: Consulta em lote realizada com sucesso
           schema:
             allOf:
-            - $ref: '#/definitions/models.APIResponse'
+            - $ref: '#/definitions/models.StandardResponse'
             - properties:
                 data:
-                  $ref: '#/definitions/models.SintegraResponse'
+                  $ref: '#/definitions/models.BatchSintegraResponse'
               type: object
         "400":
-          description: CNPJ inválido ou não informado
+          description: Requisição inválida ou CNPJs inválidos
           schema:
-            $ref: '#/definitions/models.APIResponse'
+            $ref: '#/definitions/models.StandardResponse'
         "429":
           description: Rate limit excedido
           schema:
-            $ref: '#/definitions/models.APIResponse'
+            $ref: '#/definitions/models.StandardResponse'
         "500":
           description: Erro interno do servidor
           schema:
-            $ref: '#/definitions/models.APIResponse'
-      summary: Consultar CNPJ via URL
+            $ref: '#/definitions/models.StandardResponse'
+      summary: Consultar múltiplos CNPJs em lote
+      tags:
+      - Sintegra
+  /api/v1/sintegra/status:
+    post:
+      consumes:
+      - application/json
+      description: Verifica se uma consulta de CNPJ está em andamento ou concluída
+      parameters:
+      - description: CNPJ para verificar status
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.StatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Status da consulta
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.StandardResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.StatusResponse'
+              type: object
+        "400":
+          description: Requisição inválida
+          schema:
+            $ref: '#/definitions/models.StandardResponse'
+        "500":
+          description: Erro interno do servidor
+          schema:
+            $ref: '#/definitions/models.StandardResponse'
+      summary: Verifica o status de uma consulta de CNPJ
       tags:
       - Sintegra
   /docs:
@@ -283,7 +460,7 @@ paths:
         "200":
           description: Documentação completa da API
           schema:
-            $ref: '#/definitions/models.APIResponse'
+            $ref: '#/definitions/models.StandardResponse'
       summary: API Documentation
       tags:
       - System
@@ -297,7 +474,7 @@ paths:
           description: API funcionando corretamente
           schema:
             allOf:
-            - $ref: '#/definitions/models.APIResponse'
+            - $ref: '#/definitions/models.StandardResponse'
             - properties:
                 data:
                   $ref: '#/definitions/models.HealthResponse'
