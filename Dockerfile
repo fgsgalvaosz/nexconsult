@@ -16,8 +16,8 @@ RUN go mod download
 # Copiar código fonte
 COPY . .
 
-# Build da aplicação
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
+# Build da aplicação (servidor da API)
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o server ./cmd/server
 
 # Estágio de produção - usando Alpine com Chromium
 FROM alpine:latest
@@ -43,8 +43,8 @@ RUN addgroup -g 1001 -S appuser && \
 # Definir diretório de trabalho
 WORKDIR /home/appuser
 
-# Copiar binário da aplicação
-COPY --from=builder /app/main .
+# Copiar binário do servidor da API
+COPY --from=builder /app/server .
 COPY --from=builder /app/.env.example .
 
 # Criar script de inicialização
@@ -74,11 +74,11 @@ ENV HOME=/home/appuser
 # Ajustar permissões
 RUN chown -R appuser:appuser /home/appuser
 
-# Expor porta da aplicação
-EXPOSE 8080
+# Expor porta da aplicação (API)
+EXPOSE 3000
 
 # Mudar para usuário não-root
 USER appuser
 
-# Comando para executar a aplicação com Xvfb
-CMD ["./start.sh", "./main"]
+# Comando para executar o servidor da API com Xvfb
+CMD ["./start.sh", "./server"]
