@@ -431,9 +431,16 @@ func NewSintegraMAScraper(config *Config, logger zerolog.Logger) *SintegraMAScra
 func (s *SintegraMAScraper) Initialize() error {
 	s.logger.Info().Msg("Inicializando navegador Chrome")
 
-	// Tentar usar Chrome do Puppeteer primeiro
+	// Tentar encontrar Chrome instalado no sistema primeiro
+	path, found := launcher.LookPath()
+	if found {
+		s.logger.Info().Str("chrome_path", path).Msg("Chrome encontrado no sistema")
+	} else {
+		s.logger.Info().Msg("Chrome não encontrado no sistema, usando download automático")
+	}
+
+	// Configurar launcher com Chrome encontrado ou download automático
 	l := launcher.New().
-		Bin("/usr/bin/google-chrome-stable").
 		Headless(s.config.Headless).
 		Leakless(false).
 		Set("disable-gpu").
@@ -449,24 +456,14 @@ func (s *SintegraMAScraper) Initialize() error {
 		Set("disable-extensions").
 		Set("user-agent", s.config.UserAgent)
 
+	// Se Chrome foi encontrado no sistema, usar esse caminho
+	if found {
+		l = l.Bin(path)
+	}
+
 	url, err := l.Launch()
 	if err != nil {
-		s.logger.Warn().Err(err).Msg("Falha ao usar Chrome do Puppeteer, tentando download automático")
-		
-		// Fallback para download automático
-		l = launcher.New().
-			Headless(s.config.Headless).
-			Leakless(false).
-			Set("disable-gpu").
-			Set("no-sandbox").
-			Set("disable-dev-shm-usage").
-			Set("disable-setuid-sandbox").
-			Set("user-agent", s.config.UserAgent)
-		
-		url, err = l.Launch()
-		if err != nil {
-			return fmt.Errorf("falha ao inicializar navegador: %v", err)
-		}
+		return fmt.Errorf("falha ao inicializar navegador: %v", err)
 	}
 
 	s.logger.Info().Str("url", url).Msg("Navegador iniciado com sucesso")
