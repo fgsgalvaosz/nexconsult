@@ -27,11 +27,6 @@ RUN apk add --no-cache \
     ca-certificates \
     tzdata \
     chromium \
-    nss \
-    freetype \
-    freetype-dev \
-    harfbuzz \
-    ttf-freefont \
     xvfb \
     dbus \
     && rm -rf /var/cache/apk/*
