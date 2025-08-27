@@ -22,7 +22,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 # Estágio de produção - usando Alpine com Chromium
 FROM alpine:latest
 
-# Instalar dependências necessárias incluindo Chromium
+# Instalar dependências necessárias incluindo Chromium e Xvfb
 RUN apk add --no-cache \
     ca-certificates \
     tzdata \
@@ -32,6 +32,8 @@ RUN apk add --no-cache \
     freetype-dev \
     harfbuzz \
     ttf-freefont \
+    xvfb \
+    dbus \
     && rm -rf /var/cache/apk/*
 
 # Criar usuário não-root
@@ -44,6 +46,14 @@ WORKDIR /home/appuser
 # Copiar binário da aplicação
 COPY --from=builder /app/main .
 COPY --from=builder /app/.env.example .
+
+# Criar script de inicialização
+RUN echo '#!/bin/sh' > start.sh && \
+    echo 'Xvfb :99 -screen 0 1024x768x24 -ac +extension GLX +render -noreset &' >> start.sh && \
+    echo 'export DISPLAY=:99' >> start.sh && \
+    echo 'sleep 2' >> start.sh && \
+    echo 'exec "$@"' >> start.sh && \
+    chmod +x start.sh
 
 # Definir variáveis de ambiente
 ENV CHROME_BIN=/usr/bin/chromium-browser
@@ -60,5 +70,5 @@ EXPOSE 8080
 # Mudar para usuário não-root
 USER appuser
 
-# Comando para executar a aplicação
-CMD ["./main"]
+# Comando para executar a aplicação com Xvfb
+CMD ["./start.sh", "./main"]
