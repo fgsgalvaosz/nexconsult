@@ -34,9 +34,8 @@ temp/
 # Arquivos de resultado
 resultado_files/
 
-# Documentação
+# Documentação desnecessária
 README.md
-docs/
 *.md
 
 # Arquivos de configuração local

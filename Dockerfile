@@ -11,6 +11,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
+COPY docs/ ./docs/
 
 # Download das dependências
 RUN go mod download
@@ -44,6 +45,7 @@ WORKDIR /home/appuser
 
 # Copiar binário compilado para Linux
 COPY --from=builder /app/server .
+COPY --from=builder /app/docs/ ./docs/
 COPY .env.example .
 
 # Criar script de inicialização
