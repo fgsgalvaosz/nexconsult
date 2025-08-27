@@ -1,4 +1,4 @@
-# Build stage
+# Build stage para compilar para Linux
 FROM golang:1.23-alpine AS builder
 
 # Instalar dependências necessárias
@@ -7,19 +7,19 @@ RUN apk add --no-cache git ca-certificates tzdata
 # Definir diretório de trabalho
 WORKDIR /app
 
-# Copiar arquivos de dependências
+# Copiar apenas os arquivos necessários para build
 COPY go.mod go.sum ./
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
+COPY docs/ ./docs/
 
 # Download das dependências
 RUN go mod download
 
-# Copiar código fonte
-COPY . .
+# Build da aplicação para Linux
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -o server ./cmd/server
 
-# Build da aplicação (servidor da API)
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o server ./cmd/server
-
-# Estágio de produção - usando Alpine com Chromium
+# Estágio de produção
 FROM alpine:latest
 
 # Instalar dependências necessárias incluindo Chromium e Xvfb
@@ -43,9 +43,9 @@ RUN addgroup -g 1001 -S appuser && \
 # Definir diretório de trabalho
 WORKDIR /home/appuser
 
-# Copiar binário do servidor da API
+# Copiar binário compilado para Linux
 COPY --from=builder /app/server .
-COPY --from=builder /app/.env.example .
+COPY .env.example .
 
 # Criar script de inicialização
 RUN echo '#!/bin/sh' > start.sh && \
