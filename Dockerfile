@@ -49,9 +49,19 @@ COPY --from=builder /app/.env.example .
 
 # Criar script de inicialização
 RUN echo '#!/bin/sh' > start.sh && \
+    echo 'echo "Iniciando Xvfb..."' >> start.sh && \
     echo 'Xvfb :99 -screen 0 1024x768x24 -ac +extension GLX +render -noreset &' >> start.sh && \
+    echo 'XVFB_PID=$!' >> start.sh && \
     echo 'export DISPLAY=:99' >> start.sh && \
-    echo 'sleep 2' >> start.sh && \
+    echo 'echo "Aguardando Xvfb inicializar..."' >> start.sh && \
+    echo 'sleep 3' >> start.sh && \
+    echo 'echo "Verificando se Xvfb está rodando..."' >> start.sh && \
+    echo 'if ! kill -0 $XVFB_PID 2>/dev/null; then' >> start.sh && \
+    echo '  echo "ERRO: Xvfb falhou ao iniciar"' >> start.sh && \
+    echo '  exit 1' >> start.sh && \
+    echo 'fi' >> start.sh && \
+    echo 'echo "Xvfb iniciado com sucesso (PID: $XVFB_PID)"' >> start.sh && \
+    echo 'echo "DISPLAY=$DISPLAY"' >> start.sh && \
     echo 'exec "$@"' >> start.sh && \
     chmod +x start.sh
 
