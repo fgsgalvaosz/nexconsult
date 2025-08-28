@@ -4,7 +4,10 @@
 APP_NAME=nexconsult-api
 BINARY_DIR=bin
 DOCKER_IMAGE=nexconsult-api
+DOCKER_REGISTRY?=docker.io
+DOCKER_USERNAME?=your-username
 VERSION?=latest
+FULL_IMAGE_NAME=$(DOCKER_REGISTRY)/$(DOCKER_USERNAME)/$(DOCKER_IMAGE)
 
 # Comandos Go
 .PHONY: build
@@ -43,6 +46,35 @@ docker-build:
 	@echo "🐳 Building Docker image..."
 	@docker build -t $(DOCKER_IMAGE):$(VERSION) .
 	@echo "✅ Docker image built: $(DOCKER_IMAGE):$(VERSION)"
+
+.PHONY: docker-build-hub
+docker-build-hub:
+	@echo "🐳 Building Docker image for Docker Hub..."
+	@docker build -t $(FULL_IMAGE_NAME):$(VERSION) -t $(FULL_IMAGE_NAME):latest .
+	@echo "✅ Docker image built: $(FULL_IMAGE_NAME):$(VERSION)"
+
+.PHONY: docker-tag
+docker-tag:
+	@echo "🏷️  Tagging Docker image for Docker Hub..."
+	@docker tag $(DOCKER_IMAGE):$(VERSION) $(FULL_IMAGE_NAME):$(VERSION)
+	@docker tag $(DOCKER_IMAGE):$(VERSION) $(FULL_IMAGE_NAME):latest
+	@echo "✅ Image tagged: $(FULL_IMAGE_NAME):$(VERSION) and $(FULL_IMAGE_NAME):latest"
+
+.PHONY: docker-push
+docker-push:
+	@echo "📤 Pushing Docker image to Docker Hub..."
+	@docker push $(FULL_IMAGE_NAME):$(VERSION)
+	@docker push $(FULL_IMAGE_NAME):latest
+	@echo "✅ Image pushed to Docker Hub: $(FULL_IMAGE_NAME)"
+
+.PHONY: docker-login
+docker-login:
+	@echo "🔐 Logging into Docker Hub..."
+	@docker login $(DOCKER_REGISTRY)
+
+.PHONY: docker-publish
+docker-publish: docker-build-hub docker-push
+	@echo "🚀 Docker image published to Docker Hub!"
 
 .PHONY: docker-run
 docker-run:
@@ -106,11 +138,16 @@ help:
 	@echo "  make deps           - Install dependencies"
 	@echo ""
 	@echo "Docker:"
-	@echo "  make docker-build   - Build Docker image"
-	@echo "  make docker-run     - Run Docker container"
-	@echo "  make docker-compose-up    - Start with Docker Compose"
-	@echo "  make docker-compose-down  - Stop Docker Compose"
-	@echo "  make docker-compose-logs  - View logs"
+	@echo "  make docker-build        - Build Docker image"
+	@echo "  make docker-build-hub    - Build Docker image for Docker Hub"
+	@echo "  make docker-tag          - Tag image for Docker Hub"
+	@echo "  make docker-push         - Push image to Docker Hub"
+	@echo "  make docker-login        - Login to Docker Hub"
+	@echo "  make docker-publish      - Build and publish to Docker Hub"
+	@echo "  make docker-run          - Run Docker container"
+	@echo "  make docker-compose-up   - Start with Docker Compose"
+	@echo "  make docker-compose-down - Stop Docker Compose"
+	@echo "  make docker-compose-logs - View logs"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make lint           - Run linter"

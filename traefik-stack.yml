@@ -1,0 +1,59 @@
+version: "3.7"
+services:
+
+## --------------------------- TRAEFIK --------------------------- ##
+
+  traefik:
+    image: traefik:v2.11.2 ## Versão do Traefik
+    command:
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.swarmMode=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=Gacont"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.letsencryptresolver.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencryptresolver.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencryptresolver.acme.email=contato@gacont.com.br" ## Email para Let's Encrypt
+      - "--certificatesresolvers.letsencryptresolver.acme.storage=/etc/traefik/letsencrypt/acme.json"
+      - "--log.level=DEBUG"
+
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "traefik_certificates:/etc/traefik/letsencrypt"
+
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+
+    networks:
+      - Gacont ## Nome da rede interna
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.dashboard.rule=Host(`traefik.gacont.com.br`) ## URL do dashboard
+        - traefik.http.routers.dashboard.entrypoints=websecure
+        - traefik.http.routers.dashboard.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.dashboard.service=api@internal
+        - traefik.http.services.dashboard.loadbalancer.server.port=8080
+
+## --------------------------- TRAEFIK --------------------------- ##
+
+volumes:
+  traefik_certificates:
+    external: true
+    name: traefik_certificates
+
+networks:
+  Gacont: ## Nome da rede interna
+    external: true
+    name: Gacont ## Nome da rede interna

@@ -11,6 +11,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"nexconsult/internal/config"
@@ -78,11 +79,29 @@ type SintegraResult struct {
 type SintegraService struct {
 	config            *config.Config
 	lastExtractedData *SintegraData
+	httpClient        *http.Client
+	textCleanRegex    *regexp.Regexp
+	mu                sync.RWMutex // Para proteger lastExtractedData
 }
 
 func NewSintegraService(cfg *config.Config) *SintegraService {
+	// Cliente HTTP reutilizável com configurações otimizadas
+	httpClient := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        10,
+			MaxIdleConnsPerHost: 5,
+			IdleConnTimeout:     30 * time.Second,
+		},
+	}
+
+	// Regex pré-compilada para limpeza de texto
+	textCleanRegex := regexp.MustCompile(`\s+`)
+
 	return &SintegraService{
-		config: cfg,
+		config:         cfg,
+		httpClient:     httpClient,
+		textCleanRegex: textCleanRegex,
 	}
 }
 
@@ -96,12 +115,18 @@ func (s *SintegraService) ScrapeCNPJ(cnpj string) (*SintegraResult, error) {
 		log.Printf("[DEBUG] Iniciando scraping para CNPJ: %s", cnpj)
 	}
 
-	// Configurar opções do Chrome
+	// Configurar opções do Chrome com melhorias de estabilidade
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", s.config.Headless),
 		chromedp.Flag("disable-gpu", false),
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
+		chromedp.Flag("disable-web-security", true),
+		chromedp.Flag("disable-features", "VizDisplayCompositor"),
+		chromedp.Flag("disable-background-timer-throttling", true),
+		chromedp.Flag("disable-backgrounding-occluded-windows", true),
+		chromedp.Flag("disable-renderer-backgrounding", true),
+		chromedp.Flag("disable-ipc-flooding-protection", true),
 		chromedp.WindowSize(1920, 1080),
 	)
 
@@ -112,7 +137,12 @@ func (s *SintegraService) ScrapeCNPJ(cnpj string) (*SintegraResult, error) {
 	ctx, cancel := chromedp.NewContext(allocCtx)
 	defer cancel()
 
-	ctx, cancel = context.WithTimeout(ctx, time.Duration(s.config.Timeout)*time.Second)
+	// Aumentar timeout para operações mais estáveis
+	timeoutDuration := time.Duration(s.config.Timeout) * time.Second
+	if timeoutDuration < 120*time.Second {
+		timeoutDuration = 120 * time.Second // Mínimo de 2 minutos
+	}
+	ctx, cancel = context.WithTimeout(ctx, timeoutDuration)
 	defer cancel()
 
 	var htmlContent string
@@ -121,21 +151,28 @@ func (s *SintegraService) ScrapeCNPJ(cnpj string) (*SintegraResult, error) {
 		log.Printf("[DEBUG] Navegando para %s", s.config.SintegraURL)
 	}
 
-	// Seguir exatamente o fluxo do teste Playwright
-	err := chromedp.Run(ctx,
-		// Navegar para a página
-		chromedp.Navigate(s.config.SintegraURL),
-		// Aguardar carregamento
-		chromedp.Sleep(2*time.Second),
-		// Clicar no radio button CPF/CNPJ
-		chromedp.Click(`td:nth-of-type(2) > label`, chromedp.ByQuery),
-		// Clicar no campo CNPJ
-		chromedp.Click(`#form1\:cpfCnpj`, chromedp.ByQuery),
-		// Digitar o CNPJ
-		chromedp.SendKeys(`#form1\:cpfCnpj`, cnpj, chromedp.ByQuery),
-		// Aguardar um pouco
-		chromedp.Sleep(1*time.Second),
-	)
+	// Seguir fluxo com retry e timeouts mais robustos
+	err := s.executeWithRetry(ctx, func(ctx context.Context) error {
+		return chromedp.Run(ctx,
+			// Navegar para a página
+			chromedp.Navigate(s.config.SintegraURL),
+			// Aguardar carregamento completo
+			chromedp.WaitReady("body", chromedp.ByQuery),
+			chromedp.Sleep(3*time.Second),
+			// Clicar no radio button CPF/CNPJ
+			chromedp.Click(`td:nth-of-type(2) > label`, chromedp.ByQuery),
+			chromedp.Sleep(500*time.Millisecond),
+			// Aguardar campo aparecer e clicar
+			chromedp.WaitVisible(`#form1\:cpfCnpj`, chromedp.ByQuery),
+			chromedp.Click(`#form1\:cpfCnpj`, chromedp.ByQuery),
+			chromedp.Sleep(500*time.Millisecond),
+			// Limpar campo e digitar o CNPJ
+			chromedp.Clear(`#form1\:cpfCnpj`, chromedp.ByQuery),
+			chromedp.SendKeys(`#form1\:cpfCnpj`, cnpj, chromedp.ByQuery),
+			// Aguardar um pouco
+			chromedp.Sleep(1*time.Second),
+		)
+	}, 2) // Retry até 2 vezes
 
 	if err != nil {
 		return nil, fmt.Errorf("erro durante preenchimento inicial: %v", err)
@@ -243,8 +280,10 @@ func (s *SintegraService) ScrapeCNPJ(cnpj string) (*SintegraResult, error) {
 		return nil, fmt.Errorf("erro na extração: %v", err)
 	}
 
-	// Armazenar dados completos para acesso posterior
+	// Armazenar dados completos para acesso posterior (thread-safe)
+	s.mu.Lock()
 	s.lastExtractedData = data
+	s.mu.Unlock()
 
 	result.RazaoSocial = data.RazaoSocial
 	result.Situacao = data.SituacaoCadastral
@@ -252,26 +291,16 @@ func (s *SintegraService) ScrapeCNPJ(cnpj string) (*SintegraResult, error) {
 	return result, nil
 }
 
-// GetLastExtractedData retorna os últimos dados extraídos
+// GetLastExtractedData retorna os últimos dados extraídos (thread-safe)
 func (s *SintegraService) GetLastExtractedData() *SintegraData {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.lastExtractedData
 }
 
 func (s *SintegraService) ExtractDataFromHTML(htmlContent string) (*SintegraData, error) {
-	f, err := os.CreateTemp("", "temp_*.html")
-	if err != nil {
-		return nil, err
-	}
-	defer os.Remove(f.Name())
-	defer f.Close()
-
-	_, err = f.WriteString(htmlContent)
-	if err != nil {
-		return nil, err
-	}
-	f.Close()
-
-	doc, err := s.loadDocumentFromFile(f.Name())
+	// Otimização: Parse direto do string sem arquivo temporário
+	doc, err := s.parseHTMLFromString(htmlContent)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao parsear HTML: %v", err)
 	}
@@ -382,8 +411,7 @@ func (s *SintegraService) requestCaptchaSolution(siteKey string) (string, error)
 		"json":      {"1"},
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.PostForm("https://api.solvecaptcha.com/in.php", payload)
+	resp, err := s.httpClient.PostForm("https://api.solvecaptcha.com/in.php", payload)
 	if err != nil {
 		return "", fmt.Errorf("erro ao enviar CAPTCHA: %v", err)
 	}
@@ -416,17 +444,35 @@ func (s *SintegraService) requestCaptchaSolution(siteKey string) (string, error)
 		log.Printf("[DEBUG] CAPTCHA enviado com ID: %s. Aguardando resolução...", taskId)
 	}
 
-	// Polling com timeout de 5 minutos (60 tentativas x 5s)
-	for i := 0; i < 60; i++ {
-		if s.config.DebugMode && i%6 == 0 { // Log a cada 30 segundos
-			log.Printf("[DEBUG] Aguardando CAPTCHA... Tentativa %d/60 (%.0f segundos)", i+1, float64(i*5))
+	// Polling otimizado com backoff exponencial limitado
+	maxAttempts := 60
+	baseDelay := 3 * time.Second
+	maxDelay := 10 * time.Second
+
+	for i := 0; i < maxAttempts; i++ {
+		// Calcular delay com backoff exponencial limitado
+		delay := baseDelay
+		if i > 5 { // Após 5 tentativas, aumentar delay gradualmente
+			multiplier := 1.0 + float64(i-5)*0.1
+			if multiplier > 2.0 {
+				multiplier = 2.0
+			}
+			delay = time.Duration(float64(baseDelay) * multiplier)
+			if delay > maxDelay {
+				delay = maxDelay
+			}
 		}
 
-		time.Sleep(5 * time.Second)
+		if s.config.DebugMode && i%5 == 0 { // Log a cada 5 tentativas
+			log.Printf("[DEBUG] Aguardando CAPTCHA... Tentativa %d/%d (próximo check em %.1fs)",
+				i+1, maxAttempts, delay.Seconds())
+		}
+
+		time.Sleep(delay)
 		token, err := s.getCaptchaResult(taskId)
 		if err == nil {
 			if s.config.DebugMode {
-				log.Printf("[DEBUG] CAPTCHA resolvido com sucesso após %.0f segundos!", float64(i*5))
+				log.Printf("[DEBUG] CAPTCHA resolvido com sucesso após tentativa %d!", i+1)
 			}
 			return token, nil
 		}
@@ -444,8 +490,7 @@ func (s *SintegraService) getCaptchaResult(captchaID string) (string, error) {
 	// URL para verificar resultado na SolveCaptcha API
 	url := fmt.Sprintf("https://api.solvecaptcha.com/res.php?key=%s&action=get&id=%s&json=1", s.config.SolveCaptchaAPIKey, captchaID)
 
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Get(url)
+	resp, err := s.httpClient.Get(url)
 	if err != nil {
 		return "", fmt.Errorf("erro na requisição: %v", err)
 	}
@@ -598,10 +643,62 @@ func (s *SintegraService) extractCNAEsFromText(doc *goquery.Document) []CNAE {
 	return cnaes
 }
 
-// cleanText remove espaços extras e normaliza o texto
+// cleanText remove espaços extras e normaliza o texto (otimizado com regex pré-compilada)
 func (s *SintegraService) cleanText(text string) string {
-	// Remove espaços extras entre palavras
-	re := regexp.MustCompile(`\s+`)
-	cleaned := re.ReplaceAllString(strings.TrimSpace(text), " ")
+	// Remove espaços extras entre palavras usando regex pré-compilada
+	cleaned := s.textCleanRegex.ReplaceAllString(strings.TrimSpace(text), " ")
 	return cleaned
+}
+
+// parseHTMLFromString faz parse do HTML direto da string (otimização)
+func (s *SintegraService) parseHTMLFromString(htmlContent string) (*goquery.Document, error) {
+	reader := strings.NewReader(htmlContent)
+
+	// Tentar com charset detection primeiro
+	utf8Reader, err := charset.NewReader(reader, "")
+	if err != nil {
+		// Se falhar, usar reader original
+		reader = strings.NewReader(htmlContent)
+		return goquery.NewDocumentFromReader(reader)
+	}
+
+	return goquery.NewDocumentFromReader(utf8Reader)
+}
+
+// executeWithRetry executa uma função com retry em caso de erro
+func (s *SintegraService) executeWithRetry(ctx context.Context, fn func(context.Context) error, maxRetries int) error {
+	var lastErr error
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			if s.config.DebugMode {
+				log.Printf("[DEBUG] Tentativa %d/%d após erro: %v", attempt+1, maxRetries+1, lastErr)
+			}
+			// Aguardar antes de tentar novamente
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Duration(attempt) * 2 * time.Second):
+			}
+		}
+
+		err := fn(ctx)
+		if err == nil {
+			return nil
+		}
+
+		lastErr = err
+
+		// Se for erro de contexto (timeout/cancelamento), não tentar novamente
+		if ctx.Err() != nil {
+			return err
+		}
+
+		// Se for o último retry, retornar o erro
+		if attempt == maxRetries {
+			return err
+		}
+	}
+
+	return lastErr
 }

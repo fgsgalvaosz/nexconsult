@@ -51,9 +51,28 @@ func (h *ConsultaHandler) ConsultaCNPJ(c *fiber.Ctx) error {
 	result, err := h.sintegraService.ScrapeCNPJ(cnpj)
 	if err != nil {
 		log.Printf("Erro na consulta: %v", err)
-		return c.Status(fiber.StatusInternalServerError).JSON(dto.ErrorResponse{
-			Error:   "Consultation Error",
-			Message: err.Error(),
+
+		// Determinar tipo de erro e status code apropriado
+		statusCode := fiber.StatusInternalServerError
+		errorType := "Consultation Error"
+
+		errorMsg := err.Error()
+		if strings.Contains(errorMsg, "timeout") {
+			statusCode = fiber.StatusRequestTimeout
+			errorType = "Timeout Error"
+			errorMsg = "A consulta demorou mais que o esperado. Tente novamente em alguns minutos."
+		} else if strings.Contains(errorMsg, "CAPTCHA") {
+			errorType = "CAPTCHA Error"
+			errorMsg = "Erro na resolução do CAPTCHA. Tente novamente."
+		} else if strings.Contains(errorMsg, "websocket") {
+			statusCode = fiber.StatusServiceUnavailable
+			errorType = "Connection Error"
+			errorMsg = "Problema de conexão com o sistema SINTEGRA. Tente novamente."
+		}
+
+		return c.Status(statusCode).JSON(dto.ErrorResponse{
+			Error:   errorType,
+			Message: errorMsg,
 		})
 	}
 
