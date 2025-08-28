@@ -1,0 +1,38 @@
+# Binários
+/bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Arquivos de teste
+*.test
+
+# Arquivos de cobertura
+*.out
+
+# Dependências do módulo Go
+/vendor/
+
+# Arquivos de configuração sensíveis
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+
+# Arquivos temporários
+*.tmp
+*.temp
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Sistema operacional
+.DS_Store
+Thumbs.db

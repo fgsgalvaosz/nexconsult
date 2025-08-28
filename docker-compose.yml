@@ -1,31 +1,27 @@
 version: '3.8'
 
 services:
-  nexconsult:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: nexconsult-sintegra-ma:latest
-    container_name: nexconsult
+  nexconsult-api:
+    build: .
     ports:
-      - "8080:8080"
+      - "3000:3000"
     environment:
-      - PORT=8080
-      - GIN_MODE=release
-      - CHROME_BIN=/usr/bin/chromium-browser
-      - CHROME_PATH=/usr/bin/chromium-browser
-      - DISPLAY=:99
+      - PORT=3000
+      - HEADLESS=true
+      - DEBUG_MODE=false
+      - CAPTCHA_API_KEY=${CAPTCHA_API_KEY}
     volumes:
       - ./logs:/app/logs
-      - ./resultado_files:/app/resultado_files
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-
-networks:
-  default:
-    driver: bridge
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
