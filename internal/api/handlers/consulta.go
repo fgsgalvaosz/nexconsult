@@ -47,8 +47,8 @@ func (h *ConsultaHandler) ConsultaCNPJ(c *fiber.Ctx) error {
 
 	log.Printf("Iniciando consulta para CNPJ: %s", cnpj)
 
-	// Executar scraping para obter HTML
-	result, err := h.sintegraService.ScrapeCNPJ(cnpj)
+	// Executar scraping para obter dados completos (uma única consulta)
+	data, err := h.sintegraService.ScrapeCNPJComplete(cnpj)
 	if err != nil {
 		log.Printf("Erro na consulta: %v", err)
 
@@ -76,25 +76,6 @@ func (h *ConsultaHandler) ConsultaCNPJ(c *fiber.Ctx) error {
 		})
 	}
 
-	// Verificar se houve erro na consulta
-	if result.Error != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(dto.ErrorResponse{
-			Error:   "Consultation Error",
-			Message: result.Error.Error(),
-		})
-	}
-
-	// Obter dados completos através de uma nova extração
-	// Vamos modificar o ScrapeCNPJ para retornar os dados completos
-	data, err := h.getCompleteData(cnpj)
-	if err != nil {
-		log.Printf("Erro ao obter dados completos: %v", err)
-		return c.Status(fiber.StatusInternalServerError).JSON(dto.ErrorResponse{
-			Error:   "Data Extraction Error",
-			Message: err.Error(),
-		})
-	}
-
 	// Converter para DTO de resposta
 	response := dto.ToConsultaResponseFromData(data)
 
@@ -103,23 +84,6 @@ func (h *ConsultaHandler) ConsultaCNPJ(c *fiber.Ctx) error {
 		Data:    response,
 		Message: "Consulta realizada com sucesso",
 	})
-}
-
-// getCompleteData executa scraping e retorna dados completos
-func (h *ConsultaHandler) getCompleteData(cnpj string) (*service.SintegraData, error) {
-	// Executar scraping para obter HTML
-	result, err := h.sintegraService.ScrapeCNPJ(cnpj)
-	if err != nil {
-		return nil, err
-	}
-
-	if result.Error != nil {
-		return nil, result.Error
-	}
-
-	// Como o ScrapeCNPJ já faz a extração internamente, vamos acessar os dados
-	// Vou modificar o serviço para expor os dados completos
-	return h.sintegraService.GetLastExtractedData(), nil
 }
 
 // cleanCNPJ remove formatação do CNPJ

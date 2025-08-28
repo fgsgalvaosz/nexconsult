@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -115,19 +114,36 @@ func (s *SintegraService) ScrapeCNPJ(cnpj string) (*SintegraResult, error) {
 		log.Printf("[DEBUG] Iniciando scraping para CNPJ: %s", cnpj)
 	}
 
-	// Configurar opções do Chrome com melhorias de estabilidade
+	// Configurar opções do Chrome otimizadas para velocidade
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", s.config.Headless),
-		chromedp.Flag("disable-gpu", false),
+		chromedp.Flag("disable-gpu", true), // Desabilitar GPU para velocidade
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
 		chromedp.Flag("disable-web-security", true),
-		chromedp.Flag("disable-features", "VizDisplayCompositor"),
+		chromedp.Flag("disable-features", "VizDisplayCompositor,TranslateUI,BlinkGenPropertyTrees"),
 		chromedp.Flag("disable-background-timer-throttling", true),
 		chromedp.Flag("disable-backgrounding-occluded-windows", true),
 		chromedp.Flag("disable-renderer-backgrounding", true),
 		chromedp.Flag("disable-ipc-flooding-protection", true),
-		chromedp.WindowSize(1920, 1080),
+		chromedp.Flag("disable-extensions", true),  // Desabilitar extensões
+		chromedp.Flag("disable-plugins", true),     // Desabilitar plugins
+		chromedp.Flag("disable-images", false),     // Manter imagens para CAPTCHA
+		chromedp.Flag("disable-javascript", false), // Manter JS para funcionalidade
+		chromedp.Flag("disable-default-apps", true),
+		chromedp.Flag("disable-sync", true),
+		chromedp.Flag("disable-background-networking", true),
+		chromedp.Flag("disable-client-side-phishing-detection", true),
+		chromedp.Flag("disable-component-update", true),
+		chromedp.Flag("disable-domain-reliability", true),
+		chromedp.Flag("disable-features", "MediaRouter"),
+		chromedp.Flag("disable-hang-monitor", true),
+		chromedp.Flag("disable-prompt-on-repost", true),
+		chromedp.Flag("disable-web-resources", true),
+		chromedp.Flag("no-first-run", true),
+		chromedp.Flag("no-default-browser-check", true),
+		chromedp.Flag("aggressive-cache-discard", true),
+		chromedp.WindowSize(1366, 768), // Tamanho menor para velocidade
 	)
 
 	// Criar contexto com configurações personalizadas
@@ -151,26 +167,24 @@ func (s *SintegraService) ScrapeCNPJ(cnpj string) (*SintegraResult, error) {
 		log.Printf("[DEBUG] Navegando para %s", s.config.SintegraURL)
 	}
 
-	// Seguir fluxo com retry e timeouts mais robustos
+	// Seguir fluxo otimizado para velocidade
 	err := s.executeWithRetry(ctx, func(ctx context.Context) error {
 		return chromedp.Run(ctx,
 			// Navegar para a página
 			chromedp.Navigate(s.config.SintegraURL),
-			// Aguardar carregamento completo
+			// Aguardar carregamento mínimo necessário
 			chromedp.WaitReady("body", chromedp.ByQuery),
-			chromedp.Sleep(3*time.Second),
-			// Clicar no radio button CPF/CNPJ
+			chromedp.Sleep(1*time.Second), // Reduzido de 3s para 1s
+			// Clicar no radio button CPF/CNPJ de forma mais direta
 			chromedp.Click(`td:nth-of-type(2) > label`, chromedp.ByQuery),
-			chromedp.Sleep(500*time.Millisecond),
-			// Aguardar campo aparecer e clicar
+			chromedp.Sleep(200*time.Millisecond), // Reduzido de 500ms para 200ms
+			// Aguardar campo aparecer e preencher diretamente
 			chromedp.WaitVisible(`#form1\:cpfCnpj`, chromedp.ByQuery),
-			chromedp.Click(`#form1\:cpfCnpj`, chromedp.ByQuery),
-			chromedp.Sleep(500*time.Millisecond),
-			// Limpar campo e digitar o CNPJ
+			// Preencher campo de forma mais eficiente
 			chromedp.Clear(`#form1\:cpfCnpj`, chromedp.ByQuery),
 			chromedp.SendKeys(`#form1\:cpfCnpj`, cnpj, chromedp.ByQuery),
-			// Aguardar um pouco
-			chromedp.Sleep(1*time.Second),
+			// Aguardar mínimo necessário
+			chromedp.Sleep(500*time.Millisecond), // Reduzido de 1s para 500ms
 		)
 	}, 2) // Retry até 2 vezes
 
@@ -182,18 +196,20 @@ func (s *SintegraService) ScrapeCNPJ(cnpj string) (*SintegraResult, error) {
 		log.Printf("[DEBUG] CNPJ preenchido, aguardando CAPTCHA...")
 	}
 
-	// Aguardar e resolver CAPTCHA
+	// Aguardar e resolver CAPTCHA de forma otimizada
 	err = chromedp.Run(ctx,
-		// Aguardar qualquer elemento de CAPTCHA aparecer
-		chromedp.Sleep(3*time.Second), // Aguardar carregamento
+		// Aguardar carregamento mínimo do CAPTCHA
+		chromedp.Sleep(1*time.Second), // Reduzido de 3s para 1s
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			if s.config.DebugMode {
 				log.Printf("[DEBUG] Procurando por elementos de CAPTCHA...")
 			}
-			// Tentar diferentes seletores de CAPTCHA
+			// Verificação mais rápida do reCAPTCHA
 			var found bool
-			// Verificar se existe reCAPTCHA
-			err := chromedp.Run(ctx, chromedp.WaitVisible(`iframe[src*="recaptcha"]`, chromedp.ByQuery))
+			// Tentar encontrar reCAPTCHA com timeout menor
+			ctxTimeout, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
+			err := chromedp.Run(ctxTimeout, chromedp.WaitVisible(`iframe[src*="recaptcha"]`, chromedp.ByQuery))
 			if err == nil {
 				found = true
 				if s.config.DebugMode {
@@ -231,12 +247,57 @@ func (s *SintegraService) ScrapeCNPJ(cnpj string) (*SintegraResult, error) {
 		log.Printf("[DEBUG] CAPTCHA resolvido, clicando no botão consultar...")
 	}
 
-	// Clicar no botão consultar e aguardar resultado
+	// Clicar no botão consultar e aguardar resultado de forma otimizada
+	var currentURL string
 	err = chromedp.Run(ctx,
 		// Clicar no botão consultar
 		chromedp.Click(`#form1\:pnlPrincipal4 input:nth-of-type(2)`, chromedp.ByQuery),
-		// Aguardar navegação para página de lista
-		chromedp.Sleep(3*time.Second),
+		// Aguardar navegação com tempo reduzido
+		chromedp.Sleep(2*time.Second), // Reduzido de 3s para 2s
+		// Verificar URL atual
+		chromedp.Location(&currentURL),
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("erro ao submeter consulta: %v", err)
+	}
+
+	// Verificar se chegou na URL esperada ou se há erro
+	if !strings.Contains(currentURL, "consultaSintegraResultadoListaConsulta.jsf") {
+		// Não chegou na URL esperada, verificar se há mensagem de erro
+		var errorHTML string
+		err = chromedp.Run(ctx,
+			// Aguardar tempo mínimo para carregamento da página de erro
+			chromedp.Sleep(1*time.Second), // Reduzido de 2s para 1s
+			chromedp.OuterHTML(`html`, &errorHTML, chromedp.ByQuery),
+		)
+
+		if err != nil {
+			return nil, fmt.Errorf("erro ao obter HTML da página de erro: %v", err)
+		}
+
+		if s.config.DebugMode {
+			log.Printf("[DEBUG] Página não chegou na URL esperada. Verificando mensagens de erro...")
+		}
+
+		// Extrair mensagem de erro
+		errorMsg := s.extractErrorMessage(errorHTML)
+		if errorMsg != "" {
+			if s.config.DebugMode {
+				log.Printf("[DEBUG] Mensagem de erro encontrada: %s", errorMsg)
+			}
+			return nil, fmt.Errorf("%s", errorMsg)
+		}
+
+		return nil, fmt.Errorf("consulta não foi processada corretamente. URL atual: %s", currentURL)
+	}
+
+	if s.config.DebugMode {
+		log.Printf("[DEBUG] Consulta submetida com sucesso, URL: %s", currentURL)
+	}
+
+	// Continuar com o fluxo otimizado - aguardar página de lista carregar
+	err = chromedp.Run(ctx,
 		// Aguardar página de lista carregar
 		chromedp.WaitVisible(`#j_id6\:pnlCadastro`, chromedp.ByQuery),
 		chromedp.ActionFunc(func(ctx context.Context) error {
@@ -247,8 +308,8 @@ func (s *SintegraService) ScrapeCNPJ(cnpj string) (*SintegraResult, error) {
 		}),
 		// Clicar no ícone de consulta para ir para página de detalhes
 		chromedp.Click(`#j_id6\:pnlCadastro img`, chromedp.ByQuery),
-		// Aguardar navegação para página de detalhes
-		chromedp.Sleep(3*time.Second),
+		// Aguardar navegação para página de detalhes com tempo reduzido
+		chromedp.Sleep(2*time.Second), // Reduzido de 3s para 2s
 		// Aguardar página de detalhes carregar
 		chromedp.WaitVisible(`body`, chromedp.ByQuery),
 		chromedp.ActionFunc(func(ctx context.Context) error {
@@ -296,6 +357,22 @@ func (s *SintegraService) GetLastExtractedData() *SintegraData {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.lastExtractedData
+}
+
+// ScrapeCNPJComplete executa scraping e retorna dados completos diretamente
+func (s *SintegraService) ScrapeCNPJComplete(cnpj string) (*SintegraData, error) {
+	// Executar scraping para obter HTML
+	result, err := s.ScrapeCNPJ(cnpj)
+	if err != nil {
+		return nil, err
+	}
+
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	// Retornar os dados completos extraídos
+	return s.GetLastExtractedData(), nil
 }
 
 func (s *SintegraService) ExtractDataFromHTML(htmlContent string) (*SintegraData, error) {
@@ -524,27 +601,6 @@ func (s *SintegraService) getCaptchaResult(captchaID string) (string, error) {
 	return "", fmt.Errorf("erro no resultado do CAPTCHA: %s", result.ID)
 }
 
-func (s *SintegraService) loadDocumentFromFile(path string) (*goquery.Document, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	utf8Reader, err := charset.NewReader(f, "")
-	if err != nil {
-		f.Close()
-		f2, err2 := os.Open(path)
-		if err2 != nil {
-			return nil, err2
-		}
-		defer f2.Close()
-		return goquery.NewDocumentFromReader(f2)
-	}
-
-	return goquery.NewDocumentFromReader(utf8Reader)
-}
-
 func (s *SintegraService) extractFieldValue(doc *goquery.Document, fieldName string) string {
 	var value string
 
@@ -701,4 +757,34 @@ func (s *SintegraService) executeWithRetry(ctx context.Context, fn func(context.
 	}
 
 	return lastErr
+}
+
+// extractErrorMessage extrai mensagem de erro do HTML da página
+func (s *SintegraService) extractErrorMessage(htmlContent string) string {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(htmlContent))
+	if err != nil {
+		return ""
+	}
+
+	// Procurar por mensagens de erro nos seletores conhecidos
+	errorSelectors := []string{
+		"#form1\\:msgs > div",
+		".pf-messages-warn",
+		".pf-messages-error",
+		".pf-messages-warn-detail",
+		".pf-messages-error-detail",
+	}
+
+	for _, selector := range errorSelectors {
+		errorElement := doc.Find(selector).First()
+		if errorElement.Length() > 0 {
+			// Retornar o texto exato da mensagem de erro, sem modificações
+			errorText := strings.TrimSpace(errorElement.Text())
+			if errorText != "" {
+				return errorText
+			}
+		}
+	}
+
+	return ""
 }
