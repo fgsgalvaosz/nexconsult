@@ -1,6 +1,9 @@
 package dto
 
-import "nexconsult/internal/service"
+import (
+	"nexconsult/internal/service/container"
+	"nexconsult/internal/service/extractor"
+)
 
 // ErrorResponse representa uma resposta de erro da API
 type ErrorResponse struct {
@@ -17,33 +20,33 @@ type SuccessResponse struct {
 
 // ConsultaResponse representa a resposta de uma consulta SINTEGRA
 type ConsultaResponse struct {
-	CNPJ              string         `json:"cnpj"`
-	InscricaoEstadual string         `json:"inscricao_estadual"`
-	RazaoSocial       string         `json:"razao_social"`
-	RegimeApuracao    string         `json:"regime_apuracao"`
-	Logradouro        string         `json:"logradouro"`
-	Numero            string         `json:"numero"`
-	Complemento       string         `json:"complemento"`
-	Bairro            string         `json:"bairro"`
-	Municipio         string         `json:"municipio"`
-	UF                string         `json:"uf"`
-	CEP               string         `json:"cep"`
-	DDD               string         `json:"ddd"`
-	Telefone          string         `json:"telefone"`
-	CNAEPrincipal     string         `json:"cnae_principal"`
-	CNAEsSecundarios  []service.CNAE `json:"cnaes_secundarios"`
-	SituacaoCadastral string         `json:"situacao_cadastral"`
-	DataSituacao      string         `json:"data_situacao"`
-	NFeAPartirDe      string         `json:"nfe_a_partir_de"`
-	EDFAPartirDe      string         `json:"edf_a_partir_de"`
-	CTEAPartirDe      string         `json:"cte_a_partir_de"`
-	DataConsulta      string         `json:"data_consulta"`
-	NumeroConsulta    string         `json:"numero_consulta"`
-	Observacao        string         `json:"observacao"`
+	CNPJ              string           `json:"cnpj"`
+	InscricaoEstadual string           `json:"inscricao_estadual"`
+	RazaoSocial       string           `json:"razao_social"`
+	RegimeApuracao    string           `json:"regime_apuracao"`
+	Logradouro        string           `json:"logradouro"`
+	Numero            string           `json:"numero"`
+	Complemento       string           `json:"complemento"`
+	Bairro            string           `json:"bairro"`
+	Municipio         string           `json:"municipio"`
+	UF                string           `json:"uf"`
+	CEP               string           `json:"cep"`
+	DDD               string           `json:"ddd"`
+	Telefone          string           `json:"telefone"`
+	CNAEPrincipal     string           `json:"cnae_principal"`
+	CNAEsSecundarios  []extractor.CNAE `json:"cnaes_secundarios"`
+	SituacaoCadastral string           `json:"situacao_cadastral"`
+	DataSituacao      string           `json:"data_situacao"`
+	NFeAPartirDe      string           `json:"nfe_a_partir_de"`
+	EDFAPartirDe      string           `json:"edf_a_partir_de"`
+	CTEAPartirDe      string           `json:"cte_a_partir_de"`
+	DataConsulta      string           `json:"data_consulta"`
+	NumeroConsulta    string           `json:"numero_consulta"`
+	Observacao        string           `json:"observacao"`
 }
 
 // ToConsultaResponse converte SintegraResult para ConsultaResponse
-func ToConsultaResponse(result *service.SintegraResult) *ConsultaResponse {
+func ToConsultaResponse(result *container.SintegraResult) *ConsultaResponse {
 	return &ConsultaResponse{
 		CNPJ:              result.CNPJ,
 		RazaoSocial:       result.RazaoSocial,
@@ -53,7 +56,7 @@ func ToConsultaResponse(result *service.SintegraResult) *ConsultaResponse {
 }
 
 // ToConsultaResponseFromData converte SintegraData para ConsultaResponse
-func ToConsultaResponseFromData(data *service.SintegraData) *ConsultaResponse {
+func ToConsultaResponseFromData(data *extractor.SintegraData) *ConsultaResponse {
 	return &ConsultaResponse{
 		CNPJ:              data.CNPJ,
 		InscricaoEstadual: data.InscricaoEstadual,

@@ -9,6 +9,7 @@ require (
 	github.com/chromedp/chromedp v0.14.1
 	github.com/gofiber/fiber/v2 v2.52.9
 	github.com/joho/godotenv v1.5.1
+	github.com/rs/zerolog v1.34.0
 	golang.org/x/net v0.43.0
 )
 

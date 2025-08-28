@@ -1,23 +1,25 @@
 package handlers
 
 import (
-	"log"
 	"strings"
 
 	"nexconsult/internal/api/dto"
-	"nexconsult/internal/service"
+	"nexconsult/internal/logger"
+	"nexconsult/internal/service/container"
 
 	"github.com/gofiber/fiber/v2"
 )
 
 type ConsultaHandler struct {
-	sintegraService *service.SintegraService
+	sintegraService *container.SintegraService
+	logger          logger.Logger
 }
 
 // NewConsultaHandler cria uma nova instância do handler de consulta
-func NewConsultaHandler(sintegraService *service.SintegraService) *ConsultaHandler {
+func NewConsultaHandler(sintegraService *container.SintegraService) *ConsultaHandler {
 	return &ConsultaHandler{
 		sintegraService: sintegraService,
+		logger:          logger.GetLogger().With(logger.String("component", "handler")),
 	}
 }
 
@@ -45,12 +47,12 @@ func (h *ConsultaHandler) ConsultaCNPJ(c *fiber.Ctx) error {
 		})
 	}
 
-	log.Printf("Iniciando consulta para CNPJ: %s", cnpj)
+	h.logger.Info("Iniciando consulta para CNPJ", logger.String("cnpj", cnpj))
 
 	// Executar scraping para obter dados completos (uma única consulta)
 	data, err := h.sintegraService.ScrapeCNPJComplete(cnpj)
 	if err != nil {
-		log.Printf("Erro na consulta: %v", err)
+		h.logger.Error("Erro na consulta", logger.String("cnpj", cnpj), logger.Error(err))
 
 		// Determinar tipo de erro e status code apropriado
 		statusCode := fiber.StatusInternalServerError

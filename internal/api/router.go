@@ -2,13 +2,13 @@ package api
 
 import (
 	"nexconsult/internal/api/handlers"
-	"nexconsult/internal/service"
+	"nexconsult/internal/service/container"
 
 	"github.com/gofiber/fiber/v2"
 )
 
 // SetupRoutes configura as rotas da API
-func SetupRoutes(app *fiber.App, sintegraService *service.SintegraService) {
+func SetupRoutes(app *fiber.App, sintegraService *container.SintegraService) {
 	// Criar handlers
 	consultaHandler := handlers.NewConsultaHandler(sintegraService)
 
