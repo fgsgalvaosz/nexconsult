@@ -1,0 +1,33 @@
+# Binários
+bin/
+*.exe
+*.exe~
+
+# Arquivos de desenvolvimento
+.git/
+.gitignore
+README.md
+recorder.md
+
+# Arquivos temporários
+*.html
+*.log
+logs/
+
+# Dependências locais
+vendor/
+
+# Arquivos de IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Arquivos do sistema
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
